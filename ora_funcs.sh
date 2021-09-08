@@ -1,7 +1,9 @@
 #!/bin/bash
-# Generic functions used by other shell scripts
 #
-# Written by Dennis Heltzel
+# File $Id: save_db_configs.sh 2268 2014-01-15 17:53:20Z dheltzel $
+# Modified $Author: dheltzel $
+# Date $Date: 2014-01-15 17:53:20 +0000 (Wed, 15 Jan 2014) $
+# Revision $Revision: 2268 $
 
 pathmunge () {
   if ! echo $PATH | /bin/egrep -q "(^|:)$1($|:)" ; then
@@ -41,11 +43,11 @@ oe ()
     TMP_ORACLE_HOME=$(ls -l /proc/$pid/exe | awk -F'> ' '{print $2}' | sed 's/\/[^\/]*\/[^\/]*$//')
   else
     # Get the OH from oratab if the process files are not readable
-    TMP_ORACLE_HOME=`grep "${TMP_ORACLE_SID}:" /etc/oratab|cut -d: -f2`
+    TMP_ORACLE_HOME=`grep "${TMP_ORACLE_SID}" /etc/oratab|cut -d: -f2`
     # If it wasn't found, strip off the last char to work on RAC
     if [ -z "${TMP_ORACLE_HOME}" ]; then
       INST=`expr substr ${TMP_ORACLE_SID} ${#TMP_ORACLE_SID} 1`
-      TMP_ORACLE_HOME=`grep "${TMP_ORACLE_SID%$INST}:" /etc/oratab|cut -d: -f2`
+      TMP_ORACLE_HOME=`grep "${TMP_ORACLE_SID%$INST}" /etc/oratab|cut -d: -f2`
     fi
   fi
 
@@ -59,7 +61,7 @@ oe ()
   if [ $? = '0' ] ; then
     # Everything works! exit with success
     echo "${ORACLE_SID}"
-    pathmunge $ORACLE_HOME/bin
+    export PATH=$ORACLE_HOME/bin:/usr/kerberos/bin:/usr/local/bin:/bin:/usr/bin
     export ORACLE_SID ORACLE_HOME PATH
     return 0
   else
@@ -82,6 +84,22 @@ exit
 !`
   echo $DB_ROLE | grep ORA- && return 1
   return 0
+}
+
+is_standby ()
+{
+  if [ $# -gt 0 ] ; then
+    oe $1
+  fi
+
+  # Test the connection
+  (sqlplus -s / as sysdba <<!
+set pages 0
+select DATABASE_ROLE from v\\$database;
+exit
+!
+) | grep PRIMARY >/dev/null && return 0
+  return 1
 }
 
 is_clonedb ()
@@ -115,3 +133,41 @@ exit
   return 0
 }
 
+chk_invalid ()
+{
+sqlplus -s / as sysdba <<!
+SET serverout ON
+SET FEED OFF
+DECLARE
+  cnt PLS_INTEGER;
+BEGIN
+  SELECT COUNT(*) INTO cnt FROM dba_objects WHERE status <> 'VALID';
+  IF cnt > 0 THEN
+    dbms_output.put_line(cnt || ' invalid objects, compiling . . .');
+    sys.utl_recomp.recomp_serial;
+    SELECT COUNT(*) INTO cnt FROM dba_objects WHERE status <> 'VALID';
+  END IF;
+  dbms_output.put_line(cnt || ' invalid objects');
+END;
+/
+exit
+!
+}
+
+validate_indexes ()
+{
+sqlplus -s / as sysdba <<!
+set pages 0
+set lines 200
+set feed off
+set head off
+prompt set echo on
+prompt set feed off
+prompt set timi on
+prompt set time on
+select 'alter index ' || owner || '.' || index_name || ' rebuild nologging online;' from dba_indexes where status = 'UNUSABLE'
+union
+select 'alter index ' || index_owner || '.' || index_name || ' rebuild partition ' || partition_name || ' nologging online' || ';' from dba_ind_partitions where status = 'UNUSABLE';
+exit
+!
+}

@@ -1,11 +1,16 @@
 # Reorganise the rows in the tables with "alter table shrink"
 #
-# written by Dennis Heltzel
+# File $Id: TableShrinks.sh 2414 2014-01-22 15:51:11Z dheltzel $
+# Modified $Author: dheltzel $ 
+# Date $Date: 2014-01-22 10:51:11 -0500 (Wed, 22 Jan 2014) $
+# Revision $Revision: 2414 $
 
 CRED=${CRED:-/}
 RUN_DDL=Y
 CASCADE=CASCADE
 COMPACT=""
+RUNDIR=`dirname "${BASH_SOURCE[0]}"`
+EXCLUDE_FILE=${RUNDIR}/TableShrinks_exclude.lst
 
 usage() {
   echo "Usage: $0 [-n ] [-r num_recs] [-d ] [-s] [-f filter_string]"
@@ -100,11 +105,12 @@ set feed off
 set head off
 set lines 130
 prompt set echo on;
-SELECT 'alter table ' || owner || '.' || table_name || ' enable row movement;' FROM dba_tables
+SELECT 'alter table ' || owner || '."' || table_name || '" enable row movement;' FROM dba_tables
  WHERE row_movement = 'DISABLED' AND iot_type is null AND temporary = 'N' ${NUM_RECS}
- AND owner not like '%SYS%' AND owner NOT IN ('OUTLN','XDB')
+ AND owner not like '%SYS%' AND owner NOT IN ('OUTLN','XDB','GSMADMIN_INTERNAL','GGS')
  AND (owner, table_name) NOT IN (SELECT owner, mview_name FROM dba_mviews)
  AND (owner, table_name) NOT IN (SELECT log_owner, log_table FROM dba_mview_logs)
+ AND compression = 'DISABLED'
  ${OPT_FILTER};
 prompt exit
 exit
@@ -127,41 +133,46 @@ set serverout on size unlimited
 set feed off
 set head off
 set lines 130
+prompt set time on;
 prompt set timi on;
 prompt set head off;
-prompt SELECT 'Starting size (MB): '||TO_CHAR(SUM(bytes)/1024/1024, '999,999,999,999.9') FROM dba_segments WHERE owner NOT LIKE '%SYS%' AND owner NOT IN ('OUTLN', 'XDB');;
+prompt SELECT 'Starting size (MB): '||TO_CHAR(SUM(bytes)/1024/1024, '999,999,999,999.9') FROM dba_segments WHERE owner NOT LIKE '%SYS%' AND owner NOT IN ('OUTLN', 'XDB','GSMADMIN_INTERNAL','GGS');;
 prompt set echo on;
-SELECT 'alter table ' || owner || '.' || table_name || ' shrink space ${COMPACT} ${CASCADE};' FROM dba_tables
+SELECT 'alter table ' || owner || '."' || table_name || '" shrink space ${COMPACT} ${CASCADE};' FROM dba_tables
  WHERE row_movement = 'ENABLED' AND segment_created = 'YES' AND iot_type is null AND temporary = 'N' ${NUM_RECS}
- AND owner not like '%SYS%' AND owner NOT IN ('OUTLN','XDB')
+ AND partitioned = 'NO' AND compression = 'DISABLED' AND read_only = 'NO' AND compression = 'DISABLED'
+ AND owner not like '%SYS%' AND owner NOT IN ('OUTLN','XDB','GSMADMIN_INTERNAL','GGS','VIZ')
  AND (owner, table_name) NOT IN (SELECT owner, mview_name FROM dba_mviews)
  AND (owner, table_name) NOT IN (SELECT log_owner, log_table FROM dba_mview_logs) ${OPT_FILTER}
- ORDER BY 1;
+ AND (owner, table_name) NOT IN (SELECT DISTINCT table_owner,table_name FROM dba_indexes WHERE index_type LIKE 'FUN%')
+ ORDER BY num_rows;
 
 SELECT 'alter table ' || table_owner || '.' || table_name || ' modify partition ' || partition_name || ' shrink space;' FROM dba_tab_partitions tp
- WHERE segment_created = 'YES' AND (table_owner, table_name) IN
- (SELECT owner, table_name FROM dba_tables WHERE iot_type IS NULL AND temporary = 'N' AND owner NOT LIKE '%SYS%' AND owner NOT IN ('OUTLN', 'XDB')
+ WHERE segment_created = 'YES' AND compression = 'DISABLED' AND (table_owner, table_name) IN
+ (SELECT owner, table_name FROM dba_tables WHERE iot_type IS NULL AND temporary = 'N' AND owner NOT LIKE '%SYS%' AND owner NOT IN ('OUTLN', 'XDB','GSMADMIN_INTERNAL','GGS','VIZ')
   AND (owner, table_name) NOT IN (SELECT owner, mview_name FROM dba_mviews)
   AND (owner, table_name) NOT IN (SELECT log_owner, log_table FROM dba_mview_logs) ${OPT_FILTER})
  AND (table_owner, table_name) NOT IN (SELECT owner, mview_name FROM dba_mviews)
  AND (table_owner, table_name) NOT IN (SELECT log_owner, log_table FROM dba_mview_logs)
- ORDER BY 1;
+ AND (table_owner, table_name) NOT IN (SELECT DISTINCT table_owner,table_name FROM dba_indexes WHERE index_type LIKE 'FUN%')
+ AND tp.partition_name NOT LIKE '%0000' AND tp.compression = 'DISABLED'
+ ORDER BY num_rows;
 
-SELECT 'alter table ' || table_owner || '.' || table_name || ' modify subpartition ' || subpartition_name || ' shrink space;' FROM dba_tab_subpartitions tp
- WHERE segment_created = 'YES' AND (table_owner, table_name) IN
- (SELECT owner, table_name FROM dba_tables WHERE iot_type IS NULL AND temporary = 'N' AND owner NOT LIKE '%SYS%' AND owner NOT IN ('OUTLN', 'XDB')
-  AND (owner, table_name) NOT IN (SELECT owner, mview_name FROM dba_mviews)
-  AND (owner, table_name) NOT IN (SELECT log_owner, log_table FROM dba_mview_logs) ${OPT_FILTER})
- AND (table_owner, table_name) NOT IN (SELECT owner, mview_name FROM dba_mviews)
- AND (table_owner, table_name) NOT IN (SELECT log_owner, log_table FROM dba_mview_logs)
- ORDER BY 1;
+--SELECT 'alter table ' || table_owner || '.' || table_name || ' modify subpartition ' || subpartition_name || ' shrink space;' FROM dba_tab_subpartitions tp
+-- WHERE segment_created = 'YES' AND compression = 'DISABLED' AND (table_owner, table_name) IN
+-- (SELECT owner, table_name FROM dba_tables WHERE iot_type IS NULL AND temporary = 'N' AND owner NOT LIKE '%SYS%' AND owner NOT IN ('OUTLN', 'XDB','GSMADMIN_INTERNAL','GGS','VIZ')
+--  AND (owner, table_name) NOT IN (SELECT owner, mview_name FROM dba_mviews)
+--  AND (owner, table_name) NOT IN (SELECT log_owner, log_table FROM dba_mview_logs) ${OPT_FILTER})
+-- AND (table_owner, table_name) NOT IN (SELECT owner, mview_name FROM dba_mviews)
+-- AND (table_owner, table_name) NOT IN (SELECT log_owner, log_table FROM dba_mview_logs)
+-- ORDER BY num_rows;
 
 prompt set echo off;
-prompt SELECT 'Ending size (MB):   '||TO_CHAR(SUM(bytes)/1024/1024, '999,999,999,999.9') FROM dba_segments WHERE owner NOT LIKE '%SYS%' AND owner NOT IN ('OUTLN', 'XDB');;
+prompt SELECT 'Ending size (MB):   '||TO_CHAR(SUM(bytes)/1024/1024, '999,999,999,999.9') FROM dba_segments WHERE owner NOT LIKE '%SYS%' AND owner NOT IN ('OUTLN', 'XDB','GSMADMIN_INTERNAL','GGS','VIZ');;
 prompt exit
 exit
 !
-) >${REPORT_NAME}
+) | fgrep -v -f ${EXCLUDE_FILE} >${REPORT_NAME}
 
 if [ "${RUN_DDL}" = 'Y' ] ; then
   echo "Table Shrink starting at `date` output: ${REPORT_NAME}.lst"

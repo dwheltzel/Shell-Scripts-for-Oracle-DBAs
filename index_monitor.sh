@@ -1,22 +1,26 @@
-# index_monitor.sh - Manages Oracle built in index monitoring
+#!/bin/bash
+# index_monitor.sh - simplifies the use of the Oracle's built in facility to monitor index usage. Helpful to determine which indexes are not used and should be dropped.
+# Written by Dennis Heltzel
 #
-# written by Dennis Heltzel
+# 8/31/2015 modified to work with 12c, where the all_object_usage view exists (it's about time!)
+
 
 EXEC_CMD="sqlplus -s / as sysdba"
 CMD_FILE=index_monitor-${ORACLE_SID}.sql
 :> $CMD_FILE
 
 usage() {
-  echo "Usage: $0 [-r] [-n] [-v]"
+  echo "Usage: $0 [-r] [-n] [-a] [-v]"
   echo "  -r - only report on unused indexes, no changes are made"
   echo "  -n - new indexes, monitor any indexes that have never been monitored"
-  echo "  -v - create the view (only needed on the first run)"
+  echo "  -a - (all) restart monitoring of indexes that were monitored in the past, but not now"
+  echo "  -v - create the view (only needs to be run once)"
   exit 1
 }
 
 install_view() {
   sqlplus -s / as sysdba <<!
-CREATE VIEW sys.v\$all_object_usage (owner, index_name, table_name, monitoring, used, start_monitoring, end_monitoring )
+CREATE VIEW sys.ALL_OBJECT_USAGE (owner, index_name, table_name, monitoring, used, start_monitoring, end_monitoring )
 AS
 SELECT do.owner, io.name, t.name, DECODE (BITAND (i.flags, 65536), 0, 'NO', 'YES'),
 DECODE (BITAND (ou.flags, 1), 0, 'NO', 'YES'), ou.start_monitoring, ou.end_monitoring
@@ -35,9 +39,9 @@ set feed off
 PROMPT set pages 0
 PROMPT set echo on
 SELECT 'alter index '||owner||'."'||index_name||'" monitoring usage;' "Monitoring changes" FROM dba_indexes
- WHERE index_type IN ('NORMAL', 'BITMAP') AND uniqueness = 'NONUNIQUE'
-   AND owner NOT LIKE '%SYS%' AND owner NOT LIKE 'APEX%' AND owner NOT IN ('OUTLN', 'PUBLIC', 'DBSNMP', 'XDB', 'ORDDATA')
-   AND (owner, index_name) NOT IN (SELECT owner, index_name FROM sys.v\$all_object_usage)
+ WHERE index_type IN ('NORMAL','BITMAP') AND uniqueness = 'NONUNIQUE' 
+   AND owner NOT IN (SELECT owner FROM dba_logstdby_skip WHERE statement_opt = 'INTERNAL SCHEMA')
+   AND (owner, index_name) NOT IN (SELECT owner, index_name FROM sys.ALL_OBJECT_USAGE)
 MINUS
 SELECT 'alter index '||index_owner||'."'||index_name||'" monitoring usage;' FROM dba_ind_columns c
  WHERE (c.table_owner, c.table_name, c.column_name, c.column_position) IN
@@ -45,8 +49,31 @@ SELECT 'alter index '||index_owner||'."'||index_name||'" monitoring usage;' FROM
      FROM dba_constraints  c, dba_constraints  r, dba_cons_columns cc, dba_cons_columns rc
      WHERE c.constraint_type = 'R' AND c.r_owner = r.owner AND c.r_constraint_name = r.constraint_name
        AND c.constraint_name = cc.constraint_name AND c.owner = cc.owner AND r.constraint_name = rc.constraint_name
-       AND r.owner = rc.owner AND cc.position = rc.position
-       AND c.owner NOT LIKE '%SYS%' AND c.owner NOT LIKE 'APEX%' AND c.owner NOT IN ('OUTLN', 'PUBLIC', 'DBSNMP', 'XDB', 'ORDDATA'));
+       AND r.owner = rc.owner AND cc.position = rc.position);
+prompt exit
+EXIT
+!
+)
+}
+
+# Restart monitoring of previously monitored indexes
+restart_monitoring() {
+  (sqlplus -s / as sysdba <<!
+set lines 100
+set pages 0
+set feed off
+PROMPT set pages 0
+PROMPT set echo on
+SELECT 'alter index '||owner||'."'||index_name||'" monitoring usage;' FROM sys.ALL_OBJECT_USAGE WHERE monitoring = 'NO'
+  AND owner NOT LIKE 'APEX%'
+MINUS
+SELECT 'alter index '||index_owner||'."'||index_name||'" monitoring usage;' FROM dba_ind_columns c
+ WHERE (c.table_owner, c.table_name, c.column_name, c.column_position) IN
+   (SELECT c.owner, c.table_name, cc.column_name, cc.position
+     FROM dba_constraints  c, dba_constraints  r, dba_cons_columns cc, dba_cons_columns rc
+     WHERE c.constraint_type = 'R' AND c.r_owner = r.owner AND c.r_constraint_name = r.constraint_name
+       AND c.constraint_name = cc.constraint_name AND c.owner = cc.owner AND r.constraint_name = rc.constraint_name
+       AND r.owner = rc.owner AND cc.position = rc.position);
 prompt exit
 EXIT
 !
@@ -61,8 +88,9 @@ set pages 0
 set feed off
 PROMPT set pages 0
 PROMPT set echo on
-select 'alter index ' || owner || '."' || index_name || '" nomonitoring usage;' from sys.v\$all_object_usage where used = 'YES' and monitoring = 'YES';
-prompt exit
+SELECT 'alter index '||owner||'."'||index_name||'" nomonitoring usage;' FROM
+ (SELECT owner, index_name FROM sys.ALL_OBJECT_USAGE WHERE monitoring = 'YES' AND used = 'YES' );
+PROMPT exit
 EXIT
 !
 )
@@ -75,19 +103,27 @@ report() {
   (sqlplus -s / as sysdba <<!
 set lines 200
 set pages 0
-select owner || '.' || index_name || ' on ' || table_name || ' not used since ' || to_char(trunc(to_date(start_monitoring,'MM-DD-YYYY HH24:MI:SS')),'MM/DD/YY')
-  from sys.v\$all_object_usage
- where used = 'NO' and monitoring = 'YES' order by trunc(to_date(start_monitoring,'MM-DD-YYYY HH24:MI:SS')), owner, table_name, index_name;
+SELECT owner||'.'||index_name||' on '||table_name||' not used since '||to_char(trunc(to_date(start_monitoring,'MM-DD-YYYY HH24:MI:SS')),'MM/DD/YY')
+  FROM sys.ALL_OBJECT_USAGE WHERE used = 'NO' AND monitoring = 'YES' AND owner NOT IN ('ENT_COMMON','GGS')
+ ORDER BY trunc(to_date(start_monitoring, 'MM-DD-YYYY HH24:MI:SS')), owner, table_name, index_name;
+prompt Invisible indexes:
+SELECT owner||'.'||index_name||' on '||table_name FROM dba_indexes WHERE visibility = 'INVISIBLE';
 EXIT
 !
 ) > ${REP_NAME}
 }
 
+## Main script starts here 
+
 # Handle parameters
-while getopts ":rnv" opt; do
+while getopts ":ranv" opt; do
   case $opt in
     r)
       EXEC_CMD="true"
+      ;;
+    a)
+      # restart monitoring of indexes that were monitored in the past, but not now
+      restart_monitoring > $CMD_FILE
       ;;
     n)
       # only run this if requested, it is slow
@@ -112,7 +148,7 @@ turn_off_monitoring >> $CMD_FILE
 
 LNCNT=`wc -l $CMD_FILE|cut -f1 -d" "`
 if [ "$LNCNT" -gt 3 ] ; then
-  more $CMD_FILE
+  cat $CMD_FILE
   $EXEC_CMD @$CMD_FILE
   echo " "
 fi

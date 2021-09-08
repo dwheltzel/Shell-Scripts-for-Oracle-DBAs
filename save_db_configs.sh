@@ -1,16 +1,17 @@
 #!/bin/bash
 #
-# File $Id: save_db_configs.sh 4025 2014-04-15 20:32:49Z dheltzel $
+# File $Id: save_db_configs.sh $
 # Modified $Author: dheltzel $
-# Date $Date: 2014-04-15 16:32:49 -0400 (Tue, 15 Apr 2014) $
-# Revision $Revision: 4025 $
+# Date $Date: $
+# Revision $Revision: $
 
 usage() {
   echo "Usage: $0 [-d database] [-g gather_proc]"
-  echo "  -d database - database to process (default is all)"
-  echo "  -g gather_proc - name of procedure in this script to run (default is all)"
-  echo "                   you can see the list of available procs with:"
-  echo "                     grep \"^gather\" $0|cut -d\\( -f1"
+  echo "  -d database - database to process (default is all running instances)"
+  echo "  -g gather_type - what type of information to gather (default is all uncommented types listed below)"
+  echo "List of valid types:"
+  grep "     .g\ather" $0|sed -e "s/gather_/ /"
+  echo
   exit 1
 }
 
@@ -21,7 +22,7 @@ while getopts ":d:g:" opt; do
       DB2PROCESS=$OPTARG
       ;;
     g)
-      PROCNAME=$OPTARG
+      PROCNAME=gather_$OPTARG
       ;;
     \?)
       echo "Invalid option: -$OPTARG" >&2
@@ -36,17 +37,15 @@ done
 # echo "DB:${DB2PROCESS}:"
 # echo "Proc:${PROCNAME}:"
 
-. `dirname "${BASH_SOURCE[0]}"`/ora_funcs.sh
-EXCLUDE_SCHEMAS="'CSMIG','ORDDATA','ORDPLUGINS','SI_INFORMTN_SCHEMA','XS\$NULL','ANONYMOUS','MDDATA','MGMT_VIEW','SPATIAL_CSW_ADMIN_USR','SPATIAL_WFS_ADMIN_USR','DBSNMP','DIP','OPS\$ORACLE','ORACLE_OCM','OUTLN','ORACLE','XDB','PERFSTAT','SCOTT'"
-# Update SVN
-SVNDIR=/u001/app/oracle/DBA/SVN
-svn update ${SVNDIR}
-BASEDIR=${SVNDIR}/servers
+RUNDIR=`dirname "${BASH_SOURCE[0]}"`
+. ${RUNDIR}/ora_funcs.sh
+EXCLUDE_SCHEMAS="'CSMIG','ORDDATA','ORDPLUGINS','SI_INFORMTN_SCHEMA','XS\$NULL','ANONYMOUS','MDDATA','MGMT_VIEW','SPATIAL_CSW_ADMIN_USR','SPATIAL_WFS_ADMIN_USR','DBSNMP','DIP','OPS\$ORACLE','ORACLE_OCM','OUTLN','ORACLE','XDB','PERFSTAT','SCOTT','FLOWS_FILES'"
+BASEDIR=~/saved_configs
 
 gather_lic() {
   # License usage
   tty -s && echo "License info: ${BASEDIR}/config/`hostname -s`/lic-${ORACLE_SID}.lst"
-  sqlplus -s / as sysdba @$BASEDIR/../scripts/db_option_usage.sql > ${BASEDIR}/config/`hostname -s`/lic-${ORACLE_SID}.lst
+  sqlplus -s / as sysdba @${RUNDIR}/db_option_usage.sql > ${BASEDIR}/config/`hostname -s`/lic-${ORACLE_SID}.lst
 }
 
 gather_pfile() {
@@ -203,8 +202,9 @@ set feed off
 set head off
 set lines 100
 set pages 0
-SELECT DISTINCT owner||'.'||segment_name||','||segment_type||','||tablespace_name FROM dba_segments WHERE segment_name NOT LIKE 'BIN%'
-AND owner NOT LIKE '%SYS%' AND owner NOT IN (${EXCLUDE_SCHEMAS}) ORDER BY 1;
+SELECT DISTINCT owner||'.'||segment_name||','||segment_type||','||tablespace_name FROM dba_segments
+ WHERE segment_name NOT LIKE 'BIN%' AND segment_name NOT LIKE 'SYS%'
+   AND owner NOT LIKE '%SYS%' AND owner NOT LIKE 'APEX%' AND owner NOT IN (${EXCLUDE_SCHEMAS}) ORDER BY 1;
 EXIT
 !
 ) > ${SEGMENTLIST_NAME}
@@ -235,13 +235,18 @@ gather_columns() {
 set ver off
 set feed off
 set head off
-set lines 100
+set lines 150
 set pages 0
-SELECT DISTINCT owner||'.'||table_name||','||TO_CHAR(column_id,'999')||','||column_name||','||data_type||','||data_length||','||nullable||','||char_used FROM dba_tab_cols
-WHERE owner NOT LIKE '%SYS%' AND owner NOT IN (${EXCLUDE_SCHEMAS}) ORDER BY 1;
+SELECT 'Cons,'||c.owner||'.'||c.table_name||','||c.constraint_type||','||cc.column_name||','||cc.position||','||c.status||','||c.constraint_name
+  FROM dba_constraints c JOIN dba_cons_columns cc ON (cc.owner = c.owner AND cc.constraint_name = c.constraint_name)
+ WHERE c.owner NOT LIKE '%SYS%' AND c.owner NOT IN (${EXCLUDE_SCHEMAS}) AND c.constraint_type IN ('P', 'U') ORDER BY 1;
+--SELECT 'column,'||owner||'.'||table_name||','||TRIM(TO_CHAR(column_id,'999'))||','||column_name||','||data_type||','||data_length||','||nullable FROM dba_tab_cols
+SELECT 'column,'||owner||'.'||table_name||','||column_name||','||data_type||','||data_length||','||nullable FROM dba_tab_cols
+ WHERE (owner,table_name) NOT IN (SELECT owner,view_name FROM dba_views)
+ AND owner NOT LIKE '%SYS%' AND owner NOT IN (${EXCLUDE_SCHEMAS}) ORDER BY 1;
 EXIT
 !
-) > ${COLUMNLIST_NAME}
+) |sort -u > ${COLUMNLIST_NAME}
 }
 
 gather_invalid() {
@@ -283,50 +288,176 @@ gather_storage() {
   export STORAGE_NAME=${BASEDIR}/config/`hostname -s`/storage-${ORACLE_SID}.lst
   tty -s && echo "Oracle storage: $STORAGE_NAME"
   (sqlplus -s / as sysdba <<!
+SET pages 0
+SET lines 300
+SET head off
+-- Space usage
+SELECT 'Space (GB) occupied by datafiles: '||ROUND(SUM(bytes)/1024/1024/1024,3) gb_used FROM dba_data_files;
+SELECT 'Space (GB) occupied by tempfiles: '||ROUND(SUM(bytes)/1024/1024/1024,3) gb_used FROM dba_temp_files;
+SELECT 'Space (GB) occupied by segments: '||ROUND(SUM(bytes)/1024/1024/1024,3) gb_used FROM dba_segments;
+SELECT 'Space (GB) occupied by online redo logs: '||ROUND(SUM(bytes*members)/1024/1024/1024,3) gb_used FROM v\$log;
+SET head on
 SET pages 2000
-SET lines 200
 COL tablespace_name FOR A30
 COL tablespace FOR A45
-COL file_name FOR A80
-COL bytes FOR 999,999,999,999
-COL maxbytes FOR 999,999,999,999
+COL file FOR A80
+COL bytes FOR 99,999,999,999,999
+COL maxbytes FOR 99,999,999,999,999
+-- Tablespace list
 SELECT contents||' Tablespace '||tablespace_name "NAME",block_size,initial_extent,extent_management,allocation_type,segment_space_management,bigfile FROM dba_tablespaces ORDER BY 1;
-SET HEAD OFF
-SELECT 'Datafile: '||tablespace_name||' '||file_name, bytes, maxbytes, autoextensible, increment_by FROM dba_data_files ORDER BY 1;
+-- Temporary Tablespace Groups
+SELECT 'Tempspace Group: ' || group_name || ' ' || tablespace_name "TEMP TS GROUP" FROM dba_tablespace_groups ORDER BY 1;
+-- Temp space usage
+PROMPT Temporary Tablespaces in use
+SELECT tablespace, SUM(blocks) TOTAL_BLOCKS FROM v\$sort_usage GROUP BY tablespace ORDER BY 2 DESC;
+-- Datafiles & tempfiles
+SELECT 'Datafile: '||tablespace_name||' '||file_name "FILE", bytes, maxbytes, autoextensible, increment_by FROM dba_data_files ORDER BY 1;
+SELECT 'Tempfile: '||tablespace_name||' '||file_name "FILE", bytes, maxbytes, autoextensible, increment_by FROM dba_temp_files ORDER BY 1;
+-- Redo logs
+SELECT 'Online Redo - thread: '||thread#||'  group: '||group#||' size: '||bytes/1024/1024/1024||' GB  members: '||members "Online Redo" FROM v\$log order by 1;
+SELECT 'Standby Redo - thread: '||thread#||'  group: '||group#||' size: '||bytes/1024/1024/1024||' GB' "Standby Redo" FROM v\$standby_log order by 1;
+-- Non-system objects in system tablespaces
 PROMPT Non-system objects in system tablespaces
-SELECT 'Bad TS: '||owner||'.'||tablespace_name tablespace, segment_type, COUNT(*) FROM dba_segments
- WHERE tablespace_name LIKE 'SYS%' AND owner NOT LIKE '%SYS%' AND owner NOT IN ('OUTLN', 'DBSNMP', 'CSMIG', 'ORDDATA', 'XDB')
+SELECT 'Bad TS: '||owner||' '||tablespace_name tablespace, segment_type, COUNT(*) cnt FROM dba_segments
+ WHERE tablespace_name LIKE 'SYS%' AND owner NOT IN (SELECT owner FROM dba_logstdby_skip WHERE statement_opt = 'INTERNAL SCHEMA') 
  GROUP BY owner, tablespace_name, segment_type
  ORDER BY owner, tablespace_name, segment_type;
+-- System objects in non-system tablespaces
 PROMPT System objects in non-system tablespaces
-SELECT 'Bad TS: '||owner||'.'||tablespace_name tablespace, segment_type, COUNT(*) FROM dba_segments
+SELECT 'Bad TS: '||owner||' '||tablespace_name tablespace, segment_type, COUNT(*) cnt FROM dba_segments
  WHERE tablespace_name NOT LIKE 'SYS%' AND tablespace_name IN
        (SELECT tablespace_name FROM dba_tablespaces WHERE contents = 'PERMANENT') AND
-       (owner LIKE '%SYS%' OR owner IN ('OUTLN', 'DBSNMP', 'CSMIG', 'ORDDATA', 'XDB'))
+       (owner IN (SELECT owner FROM dba_logstdby_skip WHERE statement_opt = 'INTERNAL SCHEMA'))
  GROUP BY owner, tablespace_name, segment_type
  ORDER BY owner, tablespace_name, segment_type;
-SET HEAD OFF
-SET FEED OFF
-SELECT 'Parallel Degree: ' || owner || '.' || table_name, degree FROM dba_tables WHERE TO_NUMBER(degree) > 1 AND owner NOT LIKE '%SYS%';
-SELECT 'Parallel Degree: ' || owner || '.' || table_name, index_name, degree FROM dba_indexes WHERE TO_NUMBER(degree) > 1 AND owner NOT LIKE '%SYS%'; 
+-- Segments allowing parallel operations
+PROMPT Segments allowing parallel operations
+SELECT 'Parallel Degree: ' || owner || '.' || table_name "TABLE", degree FROM dba_tables WHERE DECODE(degree,'DEFAULT','1',degree) > '1' AND owner NOT LIKE '%SYS%';
+SELECT 'Parallel Degree: ' || owner || '.' || table_name "TABLE", index_name, degree FROM dba_indexes WHERE DECODE(degree, 'DEFAULT', 1,degree) > 1 AND owner NOT LIKE '%SYS%'; 
 exit
 !
 ) > ${STORAGE_NAME}
 }
 
-gather_fixit() {
+gather_tables() {
   # General problems and their fixes
-  export FIXES_NAME=${BASEDIR}/config/`hostname -s`/fixit-${ORACLE_SID}.lst
-  tty -s && echo "General problems and their fixes: $FIXES_NAME"
+  export TABLES_NAME=${BASEDIR}/config/`hostname -s`/tables-${ORACLE_SID}.lst
+  tty -s && echo "Table configurations: $TABLES_NAME"
   (sqlplus -s / as sysdba <<!
 SET pages 0
 SET lines 200
 SET feed off
-prompt -- Users with bad temporary tablespaces
-SELECT 'alter user ' || username || ' temporary tablespace TEMP;' FROM dba_users WHERE temporary_tablespace NOT IN (SELECT tablespace_name FROM dba_temp_files);
+--SELECT owner||','||table_name||','||partitioned||','||temporary FROM dba_tables
+SELECT owner||','||table_name||','||temporary FROM dba_tables
+WHERE owner NOT LIKE 'APEX%' AND owner NOT IN (SELECT owner FROM dba_logstdby_skip WHERE statement_opt = 'INTERNAL SCHEMA')        
+ ORDER BY 1;
 exit
 !
-) > ${FIXES_NAME}
+) |sort -u > ${TABLES_NAME}
+}
+
+gather_indexes() {
+  # General problems and their fixes
+  export INDEXES_NAME=${BASEDIR}/config/`hostname -s`/indexes-${ORACLE_SID}.lst
+  tty -s && echo "Index configurations: $INDEXES_NAME"
+  (sqlplus -s / as sysdba <<!
+SET pages 0
+SET lines 200
+SET feed off
+--SELECT owner||','||table_name||','||index_name||','||index_type||','||uniqueness||','||compression FROM dba_indexes
+SELECT owner||','||table_name||','||index_name||','||index_type||','||uniqueness||','||compression FROM dba_indexes
+WHERE owner NOT LIKE 'APEX%' AND owner NOT IN (SELECT owner FROM dba_logstdby_skip WHERE statement_opt = 'INTERNAL SCHEMA')
+ORDER BY 1;
+exit
+!
+) |sort -u > ${INDEXES_NAME}
+}
+
+gather_views() {
+  # General problems and their fixes
+  export VIEWS_NAME=${BASEDIR}/config/`hostname -s`/views-${ORACLE_SID}.lst
+  tty -s && echo "View configurations: $VIEWS_NAME"
+  (sqlplus -s / as sysdba <<!
+SET pages 0
+SET lines 200
+SET feed off
+SELECT owner||','||view_name FROM dba_views
+WHERE owner NOT LIKE 'APEX%' AND owner NOT IN (SELECT owner FROM dba_logstdby_skip WHERE statement_opt = 'INTERNAL SCHEMA')
+ORDER BY 1;
+exit
+!
+) |sort -u > ${VIEWS_NAME}
+}
+
+gather_sequences() {
+  # General problems and their fixes
+  export SEQUENCES_NAME=${BASEDIR}/config/`hostname -s`/sequences-${ORACLE_SID}.lst
+  tty -s && echo "Sequence configurations: $SEQUENCES_NAME"
+  (sqlplus -s / as sysdba <<!
+SET pages 0
+SET lines 200
+SET feed off
+--SELECT sequence_owner||','||sequence_name||','||increment_by||','||cycle_flag||','||order_flag||','||cache_size FROM dba_sequences s
+SELECT sequence_owner||','||sequence_name||','||increment_by||','||cycle_flag||','||order_flag FROM dba_sequences s
+WHERE sequence_owner NOT LIKE 'APEX%' AND sequence_owner NOT IN (SELECT owner FROM dba_logstdby_skip WHERE statement_opt = 'INTERNAL SCHEMA')
+ORDER BY 1;
+exit
+!
+) |sort -u > ${SEQUENCES_NAME}
+}
+
+gather_triggers() {
+  # General problems and their fixes
+  export TRIGGERS_NAME=${BASEDIR}/config/`hostname -s`/triggers-${ORACLE_SID}.lst
+  tty -s && echo "Trigger configurations: $TRIGGERS_NAME"
+  (sqlplus -s / as sysdba <<!
+SET pages 0
+SET lines 200
+SET feed off
+SELECT owner||','||trigger_name||','||trigger_type||','||table_name||','||status FROM dba_triggers t
+WHERE owner NOT LIKE 'APEX%' AND owner NOT IN (SELECT owner FROM dba_logstdby_skip WHERE statement_opt = 'INTERNAL SCHEMA')
+ ORDER BY 1;
+exit
+!
+) |sort -u > ${TRIGGERS_NAME}
+}
+
+gather_security() {
+  # General problems and their fixes
+  export SECURITY_NAME=${BASEDIR}/config/`hostname -s`/security-${ORACLE_SID}.lst
+  tty -s && echo "Security configurations: $SECURITY_NAME"
+  (sqlplus -s / as sysdba <<!
+SET pages 0
+SET lines 200
+SET feed off
+SELECT 'SYSDBA: ' || username FROM v\$pwfile_users;
+SELECT 'DBA: ' || grantee FROM dba_role_privs WHERE granted_role = 'DBA' AND grantee NOT LIKE 'SYS%';
+SELECT 'Role,'||ROLE FROM dba_roles;
+SELECT 'RoleGrant,'||granted_role||','||grantee FROM dba_role_privs WHERE grantee NOT LIKE '%SYS%' AND grantee NOT LIKE 'APEX%' AND grantee NOT IN (${EXCLUDE_SCHEMAS});
+SELECT 'RoleSysPrivs,'||grantee||','||privilege FROM dba_sys_privs WHERE grantee IN (SELECT role FROM dba_roles);
+exit
+!
+) > ${SECURITY_NAME}
+}
+
+gather_grants() {
+  # Generate all object grants
+  export GRANT_NAME=${BASEDIR}/config/`hostname -s`/object_grants-${ORACLE_SID}.lst
+  tty -s && echo "Object Grants: $GRANT_NAME"
+  (sqlplus -s / as sysdba <<!
+set echo off
+SET pages 0
+SET lines 200
+SET feed off
+--SELECT 'grant '||listagg(privilege, ',') within GROUP(ORDER BY privilege)||' on '||owner||'.'||table_name||' to '||grantee||decode(grantable,'YES',' with grant option;',';')
+SELECT DISTINCT privilege||' on '||owner||'."'||table_name||'" from '||grantee||';'
+  FROM dba_tab_privs
+ WHERE owner NOT LIKE 'APEX%' AND owner NOT IN (SELECT owner FROM dba_logstdby_skip WHERE statement_opt = 'INTERNAL SCHEMA')
+ --GROUP BY owner,table_name,grantee,grantable ORDER BY owner,table_name,grantee;
+ ;
+exit
+!
+) |sort -u > ${GRANT_NAME}
 }
 
 gather_server() {
@@ -373,7 +504,8 @@ gather_server() {
 
 one_db() {
     tty -s && echo ""
-    test_connect ${ORACLE_SID} || continue
+echo "ORACLE_SID ${ORACLE_SID}"
+    test_connect ${ORACLE_SID} #|| continue
     export ORACLE_SID
 
     if [ -n "${PROCNAME}" ] ; then
@@ -385,12 +517,18 @@ one_db() {
       gather_users
       gather_expiring
       gather_segments
-      gather_objects
+      #gather_objects
+      gather_grants
       gather_columns
       gather_invalid
       gather_jobs
       gather_storage
-      gather_fixit
+      gather_tables
+      gather_indexes
+      gather_views
+      gather_sequences
+      gather_triggers
+      gather_security
     fi
 }
 
@@ -408,10 +546,6 @@ else
 fi
 
 # Remove any files that failed because the standby didn't allow access
-grep -l ORA-01219 ${BASEDIR}/config/`hostname -s`/*|xargs rm -f
+#grep -l ORA-01219 ${BASEDIR}/config/`hostname -s`/*|xargs rm -f
 # Remove any empty files
-find ${BASEDIR}/config/`hostname -s` -name "*lst" -size 0 -exec rm {} \;
-# Commit changes to SVN
-/usr/bin/svn status ${BASEDIR}/config/`hostname -s`|grep "?"|cut -c5-|xargs /usr/bin/svn add 2>/dev/null
-tty -s && echo "Committing changes to SVN"
-/usr/bin/svn commit -m "Config changes" ${BASEDIR} >~/svn_config.out
+#find ${BASEDIR}/config/`hostname -s` -name "*lst" -size 0 -exec rm {} \;
