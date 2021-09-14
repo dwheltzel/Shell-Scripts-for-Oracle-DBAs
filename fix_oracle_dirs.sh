@@ -22,7 +22,7 @@ select DIRECTORY_PATH||':'||owner||':'||DIRECTORY_NAME from dba_directories;
 exit
 !
 # Loop through each found directory and write DDL if needed
-cat ${DIRLIST} | while IFS=: read -r old_path owner dirname;do 
+cat ${DIRLIST} | while IFS=: read -r old_path owner dirname;do
   if `ls -d $old_path >/dev/null 2>&1` ; then
     #echo "$old_path exists"
     new_path=`readlink -m $old_path`
@@ -36,3 +36,4 @@ cat ${DIRLIST} | while IFS=: read -r old_path owner dirname;do
 done
 # Display the results
 cat ${FIXSQL}
+
