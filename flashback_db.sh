@@ -4,10 +4,8 @@
 #Input: Update the dblist parameter below to specify list of databases for flashback ops. 
 #       Value is single space separated list of db names(not instance name).
 #
-# File $Id: RunForAllDatabases.sh 2636 2014-02-04 20:33:07Z dheltzel $
 # Modified $Author: dheltzel $ 
 # Date $Date: 2014-02-04 20:33:07 +0000 (Tue, 04 Feb 2014) $
-# Revision $Revision: 2636 $
 
 #Estimate fra storage room required to retain flashback and archivelogs for $numdays days
 numdays=8
