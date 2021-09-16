@@ -1,12 +1,16 @@
 # Manage partitions created by incremental partitioning
 #
 # Modified $Author: dheltzel $ 
-
-export ORACLE_BASE=/u01/app/oracle
-export ORACLE_HOME=/u01/app/oracle/product/12.1.0.2/DbHome_2
+. /home/oracle/bin/ora_funcs.sh
+#ORACLE_SID=FTSPRDEXA2
+ORACLE_BASE=/u01/app/oracle
+ORACLE_HOME=${ORACLE_BASE}/product/12.1.0.2/DbHome_2
+PATH=$PATH:$ORACLE_HOME/bin
 
 CRED=${CRED:-/}
-export PATH=$PATH:$ORACLE_HOME/bin
+if [ -r SetEnv.sh ] ; then
+. ./SetEnv.sh
+fi
 
 usage() {
   echo "Usage: $0 [-d database name] [-p]"
@@ -46,6 +50,14 @@ CMD_OUTPUT_NAME=${BASE_NAME}.out
 #echo "DB_NAME: ${DB_NAME}"
 #echo "REPORT_NAME: ${REPORT_NAME}"
 #echo "SQL_NAME: ${SQL_NAME}"
+LOG_DIR=/cloudfs/logs
+LOG_FILE=${LOG_DIR}/manage_partitions-${ORACLE_SID}.`date '+%y%m'`
+if test -t 1; then
+    echo "Results in $LOG_FILE"
+fi
+exec >> $LOG_FILE 2>&1
+echo "Starting `date`"
+oe ${ORACLE_SID}
 
 sqlplus -s ${CRED} as sysdba <<! >${SQL_NAME}
 SET SERVEROUT ON SIZE UNLIMITED
@@ -172,39 +184,43 @@ q
 !
 
 drop_old_partitions () {
-sqlplus -s ${CRED} as sysdba <<! >${DROP_SQL_NAME}
+  (sqlplus -s ${CRED} as sysdba <<! 
 SET SERVEROUT ON SIZE UNLIMITED
 SET FEED OFF
 SET HEAD OFF
 SET LINES 200
 ALTER SESSION SET DDL_LOCK_TIMEOUT=300
+-- 30 day retention
 
-SELECT 'alter table PAYPANEL.MERCHANT_ALERTS drop partition '||partition_name||' update global indexes;'
-  FROM dba_tab_partitions p WHERE table_owner = 'PAYPANEL' AND table_name = 'MERCHANT_ALERTS' AND partition_name < (SELECT 'MERCHANT_ALERTS_'||to_char(SYSDATE - 30,'YYYY_MMDD') FROM dual);
-SELECT 'alter table CCONNECT.AUTH_LOG drop partition '||partition_name||' update global indexes;'
-  FROM dba_tab_partitions p WHERE table_owner = 'CCONNECT' AND table_name = 'AUTH_LOG' AND partition_name < (SELECT 'AUTH_LOG_'||to_char(SYSDATE - 30,'YYYY_MMDD') FROM dual);
-SELECT 'alter table DE.SRC_NORTH_DFM drop partition '||subobject_name||' update global indexes;',created,last_ddl_time FROM dba_objects
- WHERE owner = 'DE' AND object_name = 'SRC_NORTH_DFM' AND object_type = 'TABLE PARTITION' AND subobject_name NOT LIKE '%BASE' AND created < SYSDATE - 31;
-SELECT 'alter table BIZ.STG_MERCH_TRAN drop partition '||partition_name||' update global indexes;'
-  FROM dba_tab_partitions p WHERE table_owner = 'BIZ' AND table_name = 'STG_MERCH_TRAN' AND partition_name < (SELECT 'STG_MERCH_TRAN_'||to_char(SYSDATE - 90,'YYYY_MM') FROM dual);
-SELECT 'alter table NOTIFICATION.NOTIF_SERV_SENT_EMAIL drop partition '||partition_name||' update global indexes;'
-  FROM dba_tab_partitions p WHERE table_owner = 'NOTIFICATION' AND table_name = 'NOTIF_SERV_SENT_EMAIL' AND partition_name < (SELECT 'NOTIF_SERV_SENT_EM_'||to_char(SYSDATE - 30,'YYYY_MMDD') FROM dual);
-SELECT 'alter table BIZ.MTS_EVENT_LOG drop partition '||partition_name||' update global indexes;'
-  FROM dba_tab_partitions p WHERE table_owner = 'BIZ' AND table_name = 'MTS_EVENT_LOG' AND partition_name < (SELECT 'MTS_EVENT_LOG_'||to_char(SYSDATE - 30,'YYYY_MMDD') FROM dual);
-SELECT 'alter table ENT_COMMON.APP_AUDIT_AUX drop partition '||partition_name||' update global indexes;'
-  FROM dba_tab_partitions p WHERE table_owner = 'ENT_COMMON' AND table_name = 'APP_AUDIT_AUX' AND partition_name < (SELECT 'APP_AUDIT_AUX_'||to_char(SYSDATE - 59,'YYYY_MMDD') FROM dual);
+SELECT 'alter table BIZ.MTS_EVENT_LOG drop partition '||partition_name||' update global indexes;' FROM dba_tab_partitions p WHERE table_owner = 'BIZ' AND table_name = 'MTS_EVENT_LOG' AND partition_name < (SELECT 'MTS_EVENT_LOG_'||to_char(SYSDATE - 31,'YYYY_MMDD') FROM dual);
+SELECT 'alter table CCONNECT.AUTH_LOG drop partition '||partition_name||' update global indexes;' FROM dba_tab_partitions p WHERE table_owner = 'CCONNECT' AND table_name = 'AUTH_LOG' AND partition_name < (SELECT 'AUTH_LOG_'||to_char(SYSDATE - 31,'YYYY_MMDD') FROM dual);
+SELECT 'alter table DE.SRC_NORTH_DFM drop partition '||subobject_name||' update global indexes;',created,last_ddl_time FROM dba_objects WHERE owner = 'DE' AND object_name = 'SRC_NORTH_DFM' AND object_type = 'TABLE PARTITION' AND subobject_name NOT LIKE '%BASE' AND created < SYSDATE - 31;
+SELECT 'alter table NOTIFICATION.NOTIF_SERV_SENT_EMAIL drop partition '||partition_name||' update global indexes;' FROM dba_tab_partitions p WHERE table_owner = 'NOTIFICATION' AND table_name = 'NOTIF_SERV_SENT_EMAIL' AND partition_name < (SELECT 'NOTIF_SERV_SENT_EM_'||to_char(SYSDATE - 31,'YYYY_MMDD') FROM dual);
+SELECT 'alter table PAYPANEL.MERCHANT_ALERTS drop partition '||partition_name||' update global indexes;' FROM dba_tab_partitions p WHERE table_owner = 'PAYPANEL' AND table_name = 'MERCHANT_ALERTS' AND partition_name < (SELECT 'MERCHANT_ALERTS_'||to_char(SYSDATE - 31,'YYYY_MMDD') FROM dual);
+
+-- 60 day retention
+SELECT 'alter table ENT_COMMON.APP_AUDIT_AUX drop partition '||partition_name||' update global indexes;' FROM dba_tab_partitions p WHERE table_owner = 'ENT_COMMON' AND table_name = 'APP_AUDIT_AUX' AND partition_name < (SELECT 'APP_AUDIT_AUX_'||to_char(SYSDATE - 62,'YYYY_MMDD') FROM dual);
+SELECT 'alter table FTSV1.SENT_EMAIL_QUEUE drop partition '||partition_name||' update global indexes;' FROM dba_tab_partitions p WHERE table_owner = 'FTSV1' AND table_name = 'SENT_EMAIL_QUEUE' AND partition_name < (SELECT 'SENT_EMAIL_QUEUE_'||to_char(SYSDATE - 62,'YYYY_MMDD') FROM dual);
+
+-- 90 day retention
+SELECT 'alter table BOARDING.XML_REQUEST_LOG drop partition '||partition_name||' update global indexes;' FROM dba_tab_partitions p WHERE table_owner = 'BOARDING' AND table_name = 'XML_REQUEST_LOG' AND partition_name < (SELECT 'XML_REQUEST_LOG_'||to_char(SYSDATE - 120,'YYYY_MMDD') FROM dual);
+
+-- 365 day retention
+SELECT 'alter table CCONNECT.AUTH_HISTORY drop partition '||partition_name||' update global indexes;' FROM dba_tab_partitions p WHERE table_owner = 'CCONNECT' AND table_name = 'AUTH_HISTORY' AND partition_name < (SELECT 'AUTH_HISTORY_'||to_char(SYSDATE - 365,'YYYY_MM') FROM dual);
 
 exit
 !
+) > ${DROP_SQL_NAME}
 }
 
 if [ -s ${SQL_NAME} ] ; then
   cat ${SQL_NAME}
-  sqlplus -s ${CRED} as sysdba <<! >${CMD_OUTPUT_NAME}
+  (sqlplus -s ${CRED} as sysdba <<! 
 ALTER SESSION SET DDL_LOCK_TIMEOUT=300
 @${SQL_NAME}
 exit
 !
+) >${CMD_OUTPUT_NAME}
 else
   rm ${SQL_NAME}
 fi
@@ -215,12 +231,13 @@ if [ -n "${PURGE_OLD}" ] ; then
   drop_old_partitions
   if [ -s ${DROP_SQL_NAME} ] ; then
     cat ${DROP_SQL_NAME}
-    sqlplus -s ${CRED} as sysdba <<! >>${CMD_OUTPUT_NAME}
+    (sqlplus -s ${CRED} as sysdba <<!
 ALTER SESSION SET DDL_LOCK_TIMEOUT=300
 @${DROP_SQL_NAME}
 exec dbms_part.cleanup_gidx
 exit
 !
+) >>${CMD_OUTPUT_NAME}
   else
     rm ${DROP_SQL_NAME}
   fi
