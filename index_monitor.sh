@@ -98,7 +98,7 @@ EXIT
 
 # Unused Index Report
 report() {
-  export REP_NAME=unused_indexes.lst
+  export REP_NAME=unused_indexes-$ORACLE_SID.lst
   tty -s && echo "Unused index report: ${REP_NAME}"
   (sqlplus -s / as sysdba <<!
 set lines 200
