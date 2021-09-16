@@ -76,7 +76,7 @@ DECLARE
 BEGIN
   -- tables that are partitioned by day
   FOR r IN (select table_owner,table_name,partition_name,high_value,trim( '_' from substr(table_name, 0, 18)) stub_name from dba_tab_partitions
-             WHERE partition_name LIKE 'SYS%' AND table_name in ('MERCHANT_ALERTS','AUTH_LOG','NOTIF_SERV_SENT_EMAIL','MTS_EVENT_LOG','APP_AUDIT_AUX','SENT_EMAIL_QUEUE') AND table_owner IN ('PAYPANEL','CCONNECT','NOTIFICATION','BIZ','ENT_COMMON','FTSV1'))
+             WHERE partition_name LIKE 'SYS%' AND table_name in ('LOG','QUEUE') AND table_owner IN ('SCOTT'))
   LOOP
     BEGIN
     c_high_value := substr(r.high_value, 11, 10);
@@ -92,7 +92,7 @@ BEGIN
 
   -- tables that are partitioned by a 3 digit number
   FOR r IN (select table_owner,table_name,partition_name,high_value,trim( '_' from substr(table_name, 0, 18)) stub_name from dba_tab_partitions
-             WHERE partition_name LIKE 'SYS%' AND table_name in ('RESIDUAL_DETAIL','RESIDUAL_DETAIL_AGENT') AND table_owner IN ('RE'))
+             WHERE partition_name LIKE 'SYS%' AND table_name in ('DETAIL') AND table_owner IN ('SCOTT'))
   LOOP
     BEGIN
     c_high_value := substr(r.high_value, 1, 3);
@@ -109,7 +109,7 @@ BEGIN
   -- tables that are partitioned by a number
   FOR r IN (select table_owner,table_name,partition_name,high_value,trim( '_' from substr(table_name, 0, 18)) stub_name from dba_tab_partitions
              WHERE partition_name LIKE 'SYS%' AND (table_owner, table_name) in (SELECT owner, table_name FROM dba_part_tables WHERE INTERVAL = '10000'))
---table_name in ('SRC_TSYS_TRANSACTIONS','STG_OMAHA_TRANS_MD028','SRC_OMAHA','SRC_NORTH_DFM','STG_NORTH_LOC_TRAILER','STG_NORTH_LOC_HEADER','TAR_AUTHORIZATIONS','TAR_DEPOSIT_ADJUSTMENT') AND table_owner IN ('DE'))
+--table_name in ('TRANSACTIONS','ADJUSTMENT') AND table_owner IN ('SCOTT'))
   LOOP
     BEGIN
     c_high_value := trim(r.high_value);
@@ -126,7 +126,7 @@ BEGIN
 
   -- tables that are partitioned by month (integer format column)
   FOR r IN (select table_owner,table_name,partition_name,high_value,trim( '_' from substr(table_name, 0, 18)) stub_name from dba_tab_partitions
-             WHERE partition_name LIKE 'SYS%' AND table_owner IN ('BIZ','CCONNECT') AND table_name IN ('AUTH_HISTORY','MERCHANT_IC_PLAN_STAT'))
+             WHERE partition_name LIKE 'SYS%' AND table_owner IN ('SCOTT') AND table_name IN ('HISTORY'))
   LOOP
     BEGIN
     c_month := substr(r.high_value, 5, 2);
@@ -148,7 +148,7 @@ BEGIN
 
   -- tables that are partitioned by month (date format column)
   FOR r IN (select table_owner,table_name,partition_name,high_value,trim( '_' from substr(replace(table_name, 'TAR_', ''), 0, 18)) stub_name from dba_tab_partitions
-             WHERE  partition_name LIKE 'SYS%' AND table_name NOT IN ('SRC_TSYS_TRANSACTIONS','STG_OMAHA_TRANS_MD028','SRC_OMAHA','MERCHANT_ALERTS','AUTH_LOG','RESIDUAL_DETAIL','RESIDUAL_DETAIL_AGENT','SRC_NORTH_DFM','AUTH_HISTORY')
+             WHERE  partition_name LIKE 'SYS%' AND table_name NOT IN ('TRANSACTIONS','HISTORY')
              AND table_owner NOT LIKE 'APEX%' AND table_owner NOT IN (SELECT owner FROM dba_logstdby_skip WHERE statement_opt = 'INTERNAL SCHEMA'))
   LOOP
     BEGIN
@@ -192,21 +192,16 @@ SET LINES 200
 ALTER SESSION SET DDL_LOCK_TIMEOUT=300
 -- 30 day retention
 
-SELECT 'alter table BIZ.MTS_EVENT_LOG drop partition '||partition_name||' update global indexes;' FROM dba_tab_partitions p WHERE table_owner = 'BIZ' AND table_name = 'MTS_EVENT_LOG' AND partition_name < (SELECT 'MTS_EVENT_LOG_'||to_char(SYSDATE - 31,'YYYY_MMDD') FROM dual);
-SELECT 'alter table CCONNECT.AUTH_LOG drop partition '||partition_name||' update global indexes;' FROM dba_tab_partitions p WHERE table_owner = 'CCONNECT' AND table_name = 'AUTH_LOG' AND partition_name < (SELECT 'AUTH_LOG_'||to_char(SYSDATE - 31,'YYYY_MMDD') FROM dual);
-SELECT 'alter table DE.SRC_NORTH_DFM drop partition '||subobject_name||' update global indexes;',created,last_ddl_time FROM dba_objects WHERE owner = 'DE' AND object_name = 'SRC_NORTH_DFM' AND object_type = 'TABLE PARTITION' AND subobject_name NOT LIKE '%BASE' AND created < SYSDATE - 31;
-SELECT 'alter table NOTIFICATION.NOTIF_SERV_SENT_EMAIL drop partition '||partition_name||' update global indexes;' FROM dba_tab_partitions p WHERE table_owner = 'NOTIFICATION' AND table_name = 'NOTIF_SERV_SENT_EMAIL' AND partition_name < (SELECT 'NOTIF_SERV_SENT_EM_'||to_char(SYSDATE - 31,'YYYY_MMDD') FROM dual);
-SELECT 'alter table PAYPANEL.MERCHANT_ALERTS drop partition '||partition_name||' update global indexes;' FROM dba_tab_partitions p WHERE table_owner = 'PAYPANEL' AND table_name = 'MERCHANT_ALERTS' AND partition_name < (SELECT 'MERCHANT_ALERTS_'||to_char(SYSDATE - 31,'YYYY_MMDD') FROM dual);
+SELECT 'alter table SCOTT.LOG drop partition '||partition_name||' update global indexes;' FROM dba_tab_partitions p WHERE table_owner = 'SCOTT' AND table_name = 'LOG' AND partition_name < (SELECT 'LOG_'||to_char(SYSDATE - 31,'YYYY_MMDD') FROM dual);
 
 -- 60 day retention
-SELECT 'alter table ENT_COMMON.APP_AUDIT_AUX drop partition '||partition_name||' update global indexes;' FROM dba_tab_partitions p WHERE table_owner = 'ENT_COMMON' AND table_name = 'APP_AUDIT_AUX' AND partition_name < (SELECT 'APP_AUDIT_AUX_'||to_char(SYSDATE - 62,'YYYY_MMDD') FROM dual);
-SELECT 'alter table FTSV1.SENT_EMAIL_QUEUE drop partition '||partition_name||' update global indexes;' FROM dba_tab_partitions p WHERE table_owner = 'FTSV1' AND table_name = 'SENT_EMAIL_QUEUE' AND partition_name < (SELECT 'SENT_EMAIL_QUEUE_'||to_char(SYSDATE - 62,'YYYY_MMDD') FROM dual);
+SELECT 'alter table SCOTT.EMAIL_QUEUE drop partition '||partition_name||' update global indexes;' FROM dba_tab_partitions p WHERE table_owner = 'SCOTT' AND table_name = 'EMAIL_QUEUE' AND partition_name < (SELECT 'EMAIL_QUEUE_'||to_char(SYSDATE - 62,'YYYY_MMDD') FROM dual);
 
--- 90 day retention
-SELECT 'alter table BOARDING.XML_REQUEST_LOG drop partition '||partition_name||' update global indexes;' FROM dba_tab_partitions p WHERE table_owner = 'BOARDING' AND table_name = 'XML_REQUEST_LOG' AND partition_name < (SELECT 'XML_REQUEST_LOG_'||to_char(SYSDATE - 120,'YYYY_MMDD') FROM dual);
+-- 120 day retention
+SELECT 'alter table SCOTT.REQUEST_LOG drop partition '||partition_name||' update global indexes;' FROM dba_tab_partitions p WHERE table_owner = 'SCOTT' AND table_name = 'REQUEST_LOG' AND partition_name < (SELECT 'REQUEST_LOG_'||to_char(SYSDATE - 120,'YYYY_MMDD') FROM dual);
 
 -- 365 day retention
-SELECT 'alter table CCONNECT.AUTH_HISTORY drop partition '||partition_name||' update global indexes;' FROM dba_tab_partitions p WHERE table_owner = 'CCONNECT' AND table_name = 'AUTH_HISTORY' AND partition_name < (SELECT 'AUTH_HISTORY_'||to_char(SYSDATE - 365,'YYYY_MM') FROM dual);
+SELECT 'alter table SCOTT.HISTORY drop partition '||partition_name||' update global indexes;' FROM dba_tab_partitions p WHERE table_owner = 'SCOTT' AND table_name = 'HISTORY' AND partition_name < (SELECT 'HISTORY_'||to_char(SYSDATE - 365,'YYYY_MM') FROM dual);
 
 exit
 !

@@ -55,27 +55,27 @@ SELECT 'create bigfile tablespace APP_${TS_SUFFIX};' FROM dual
 MINUS
 SELECT 'create bigfile tablespace '||tablespace_name||';' FROM dba_tablespaces;
 -- change default tablespaces for partitioned tables (reference only,over-ridden by "store in" clause)
-(SELECT 'alter table '||owner||'.'||table_name||' MODIFY DEFAULT ATTRIBUTES TABLESPACE ETL_${TS_SUFFIX};' FROM dba_tables WHERE partitioned = 'YES' AND owner IN ('DE','RE','VIZ')
+(SELECT 'alter table '||owner||'.'||table_name||' MODIFY DEFAULT ATTRIBUTES TABLESPACE ETL_${TS_SUFFIX};' FROM dba_tables WHERE partitioned = 'YES' AND owner IN ('ETL')
 MINUS
-SELECT 'alter table '||owner||'.'||table_name||' MODIFY DEFAULT ATTRIBUTES TABLESPACE ETL_${TS_SUFFIX};' FROM dba_part_tables WHERE owner IN ('DE','RE','VIZ') AND def_tablespace_name IN ('ETL_${TS_SUFFIX}','SHORT_TERM'))
+SELECT 'alter table '||owner||'.'||table_name||' MODIFY DEFAULT ATTRIBUTES TABLESPACE ETL_${TS_SUFFIX};' FROM dba_part_tables WHERE owner IN ('ETL') AND def_tablespace_name IN ('ETL_${TS_SUFFIX}','SHORT_TERM'))
 union all
 (SELECT 'alter table '||owner||'.'||table_name||' MODIFY DEFAULT ATTRIBUTES TABLESPACE APP_${TS_SUFFIX};'
-  FROM dba_tables WHERE partitioned = 'YES' AND owner IN ('BIZ','BOARDING','CCONNECT','ENT_SECURITY','FTSV1','FTSV2','HPP','KEYCLOAK2','LOOKUP','MEMS')
+  FROM dba_tables WHERE partitioned = 'YES' AND owner IN ('APP')
 MINUS
 SELECT 'alter table '||owner||'.'||table_name||' MODIFY DEFAULT ATTRIBUTES TABLESPACE APP_${TS_SUFFIX};'
-  FROM dba_part_tables WHERE owner IN ('BIZ','BOARDING','CCONNECT','ENT_SECURITY','FTSV1','FTSV2','HPP','KEYCLOAK2','LOOKUP','MEMS') AND def_tablespace_name IN ('APP_${TS_SUFFIX}','SHORT_TERM'));
+  FROM dba_part_tables WHERE owner IN ('APP') AND def_tablespace_name IN ('APP_${TS_SUFFIX}','SHORT_TERM'));
 
 -- change "real" default tablespaces for partitioned tables
-(SELECT 'alter table '||owner||'.'||table_name||' set store in (ETL_${TS_SUFFIX});' FROM dba_tables WHERE partitioned = 'YES' AND owner IN ('DE','RE','VIZ')
+(SELECT 'alter table '||owner||'.'||table_name||' set store in (ETL_${TS_SUFFIX});' FROM dba_tables WHERE partitioned = 'YES' AND owner IN ('ETL')
 MINUS
 SELECT 'alter table '||o.owner||'.'||o.object_name||' set store in (ETL_${TS_SUFFIX});' FROM sys.insert_tsn_list$ l JOIN sys.ts$ ts ON (ts.ts# = l.ts#) JOIN dba_objects o ON (o.object_id = l.bo#)
- WHERE ts.name IN ('ETL_${TS_SUFFIX}','SHORT_TERM') AND o.owner IN ('DE','RE','VIZ'))
+ WHERE ts.name IN ('ETL_${TS_SUFFIX}','SHORT_TERM') AND o.owner IN ('ETL'))
 union all
 (SELECT 'alter table '||owner||'.'||table_name||' set store in (APP_${TS_SUFFIX});'
-  FROM dba_tables WHERE partitioned = 'YES' AND owner IN ('BIZ','BOARDING','CCONNECT','ENT_SECURITY','FTSV1','FTSV2','HPP','KEYCLOAK2','LOOKUP','MEMS')
+  FROM dba_tables WHERE partitioned = 'YES' AND owner IN ('APP')
 MINUS
 SELECT 'alter table '||o.owner||'.'||o.object_name||' set store in (APP_${TS_SUFFIX});' FROM sys.insert_tsn_list$ l JOIN sys.ts$ ts ON (ts.ts# = l.ts#) JOIN dba_objects o ON (o.object_id = l.bo#)
- WHERE ts.name IN ('APP_${TS_SUFFIX}','SHORT_TERM') AND o.owner IN ('BIZ','BOARDING','CCONNECT','ENT_SECURITY','FTSV1','FTSV2','HPP','KEYCLOAK2','LOOKUP','MEMS'));
+ WHERE ts.name IN ('APP_${TS_SUFFIX}','SHORT_TERM') AND o.owner IN ('APP'));
 exit
 !
 ) > ${SQL_NAME}
