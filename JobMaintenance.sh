@@ -3,8 +3,6 @@
 # File $Id: JobMaintenance.sh 3366 2014-03-18 20:14:51Z dheltzel $
 # Modified $Author: dheltzel $ 
 # Date $Date: 2014-03-18 16:14:51 -0400 (Tue, 18 Mar 2014) $
-# Revision $Revision: 3366 $
-
 CRED=${CRED:-/}
 
 usage() {
