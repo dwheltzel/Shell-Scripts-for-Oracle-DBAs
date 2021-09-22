@@ -3,7 +3,6 @@
 -- File $Id: RenameConstraints.sql 2604 2014-01-31 21:44:34Z dheltzel $
 -- Modified $Author: dheltzel $ 
 -- Date $Date: 2014-01-31 16:44:34 -0500 (Fri, 31 Jan 2014) $
--- Revision $Revision: 2604 $
 --
 SET serverout ON SIZE UNLIMITED
 SET feed OFF
