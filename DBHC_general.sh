@@ -77,7 +77,7 @@ while getopts ":d:m:" opt; do
       ;;
     :)
       if [ "${OPTARG}" = 'm' ] ; then
-        export MAILTO=dheltzel@cardconnect.com
+        export MAILTO=dba@example.com
       else
         echo "Option -$OPTARG requires an argument." >&2
         usage
@@ -220,7 +220,7 @@ prompt
 -- prompt ============ GoldenGate checks =========================================
 -- SELECT DECODE(COUNT(*),1,'GG - Sequence modulo values OK','GG - Issue with sequences - check modulo values') FROM (
 -- SELECT increment_by,MOD(last_number, 10),COUNT(*) FROM dba_sequences
--- WHERE sequence_owner IN ('BIZ','CVENT','ENT_COMMON','ENT_SECURITY','FTSV1','FTSV2','PAYPANEL','VIZ','HPP','LOOKUP')
+-- WHERE sequence_owner IN ('SCOTT')
 -- GROUP BY increment_by,MOD(last_number, 10));
 -- prompt Find any identity columns (not supported by GoldenGate)
 -- SELECT 'create sequence '||ic.owner||'.'||ic.table_name||'_SEQ start with '||to_char(s.last_number +1)||';'||CHR(10)||
@@ -261,14 +261,14 @@ SELECT 'Owner problem: '||owner||'.'||trigger_name trig_name,table_owner||'.'||t
 -- Disabled triggers 
 SELECT status,owner||'.'||trigger_name FROM dba_triggers WHERE status <> 'ENABLED' AND owner NOT LIKE 'APEX%' AND owner NOT IN (SELECT owner FROM dba_logstdby_skip WHERE statement_opt = 'INTERNAL SCHEMA');
 prompt
-prompt ============ Fix Merchant Center Service Account Synonyms ===================
+prompt ============ Fix Service Account Synonyms ===================
 prompt
 SELECT 'create synonym MC_SERV1.'||table_name||' for '||owner||'.'||table_name||';' FROM (SELECT owner, table_name FROM dba_tab_privs 
-WHERE grantee IN (SELECT DISTINCT granted_role FROM dba_role_privs START WITH grantee = 'MC_SERV1' CONNECT BY PRIOR granted_role = grantee) OR grantee = 'MC_SERV1'
-MINUS SELECT table_owner, table_name FROM dba_synonyms WHERE owner IN ('MC_SERV1','PUBLIC'));
+WHERE grantee IN (SELECT DISTINCT granted_role FROM dba_role_privs START WITH grantee = 'SERV1' CONNECT BY PRIOR granted_role = grantee) OR grantee = 'SERV1'
+MINUS SELECT table_owner, table_name FROM dba_synonyms WHERE owner IN ('SERV1','PUBLIC'));
 SELECT 'create synonym MC_SERV2.'||table_name||' for '||owner||'.'||table_name||';' FROM (SELECT owner, table_name FROM dba_tab_privs 
-WHERE grantee IN (SELECT DISTINCT granted_role FROM dba_role_privs START WITH grantee = 'MC_SERV2' CONNECT BY PRIOR granted_role = grantee) OR grantee = 'MC_SERV2'
-MINUS SELECT table_owner, table_name FROM dba_synonyms WHERE owner IN ('MC_SERV2','PUBLIC'));
+WHERE grantee IN (SELECT DISTINCT granted_role FROM dba_role_privs START WITH grantee = 'SERV2' CONNECT BY PRIOR granted_role = grantee) OR grantee = 'SERV2'
+MINUS SELECT table_owner, table_name FROM dba_synonyms WHERE owner IN ('SERV2','PUBLIC'));
 prompt ============ User Account Problems ==========================================
 set lines 120
 set pages 600
@@ -314,6 +314,6 @@ exit
 # If an email address is given, send the report to that address
 if [ -n "${MAILTO}" ] ; then
   echo Mailing ${REPORT_NAME} to ${MAILTO}
-  /usr/local/bin/sendEmail-v1.56/sendEmail -f $USER@`hostname` -t ${MAILTO} -u "${REPORT_TITLE}" -s mail.ftscc.net -o message-file=${REPORT_NAME}
+  /usr/local/bin/sendEmail-v1.56/sendEmail -f $USER@`hostname` -t ${MAILTO} -u "${REPORT_TITLE}" -s mail.example.com -o message-file=${REPORT_NAME}
 fi
 
