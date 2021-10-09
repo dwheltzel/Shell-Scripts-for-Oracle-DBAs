@@ -1,9 +1,6 @@
 #!/bin/bash
-#
-# File $Id: save_db_configs.sh $
-# Modified $Author: dheltzel $
-# Date $Date: $
-# Revision $Revision: $
+# save_db_configs.sh 
+# Author: dheltzel
 
 usage() {
   echo "Usage: $0 [-d database] [-g gather_proc]"
@@ -34,13 +31,16 @@ while getopts ":d:g:" opt; do
       ;;
   esac
 done
-# echo "DB:${DB2PROCESS}:"
-# echo "Proc:${PROCNAME}:"
+
+export ORACLE_BASE=/u01/app/oracle
+export ORACLE_HOME=$ORACLE_BASE/product/12.1.0.2/DbHome_2
+export ORACLE_SID=FTSPRDWDP1
+export PATH=$ORACLE_HOME/bin:$PATH:$HOME/bin
 
 RUNDIR=`dirname "${BASH_SOURCE[0]}"`
 . ${RUNDIR}/ora_funcs.sh
 EXCLUDE_SCHEMAS="'CSMIG','ORDDATA','ORDPLUGINS','SI_INFORMTN_SCHEMA','XS\$NULL','ANONYMOUS','MDDATA','MGMT_VIEW','SPATIAL_CSW_ADMIN_USR','SPATIAL_WFS_ADMIN_USR','DBSNMP','DIP','OPS\$ORACLE','ORACLE_OCM','OUTLN','ORACLE','XDB','PERFSTAT','SCOTT','FLOWS_FILES'"
-BASEDIR=~/saved_configs
+BASEDIR=/cloudfs/saved_configs
 
 gather_lic() {
   # License usage
