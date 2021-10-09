@@ -1,16 +1,13 @@
 # Manage partitions created by incremental partitioning
 #
-# Modified $Author: dheltzel $ 
+# Author: Dennis Heltzel
+
 . /home/oracle/bin/ora_funcs.sh
-#ORACLE_SID=FTSPRDEXA2
 ORACLE_BASE=/u01/app/oracle
 ORACLE_HOME=${ORACLE_BASE}/product/12.1.0.2/DbHome_2
 PATH=$PATH:$ORACLE_HOME/bin
 
 CRED=${CRED:-/}
-if [ -r SetEnv.sh ] ; then
-. ./SetEnv.sh
-fi
 
 usage() {
   echo "Usage: $0 [-d database name] [-p]"
@@ -41,7 +38,10 @@ done
 
 DB_NAME=${DB_NAME:-${ORACLE_SID}}
 export ORACLE_SID=${DB_NAME}
-BASE_NAME=ManagePartitions_${DB_NAME}-`date "+%y%m%d%H%M"`
+
+LOG_DIR=/cloudfs/logs
+LOG_FILE=${LOG_DIR}/manage_partitions-${ORACLE_SID}.`date '+%y%m'`
+BASE_NAME=${LOG_DIR}/ManagePartitions_${DB_NAME}-`date "+%y%m%d%H%M"`
 REPORT_NAME=${BASE_NAME}.lst
 SQL_NAME=${BASE_NAME}.sql
 DROP_SQL_NAME=${BASE_NAME}-drop.sql
@@ -50,8 +50,6 @@ CMD_OUTPUT_NAME=${BASE_NAME}.out
 #echo "DB_NAME: ${DB_NAME}"
 #echo "REPORT_NAME: ${REPORT_NAME}"
 #echo "SQL_NAME: ${SQL_NAME}"
-LOG_DIR=/cloudfs/logs
-LOG_FILE=${LOG_DIR}/manage_partitions-${ORACLE_SID}.`date '+%y%m'`
 if test -t 1; then
     echo "Results in $LOG_FILE"
 fi
