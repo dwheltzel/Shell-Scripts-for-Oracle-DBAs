@@ -1,6 +1,11 @@
 # Manage tablespaces and partitions created by incremental partitioning
 #
-# Modified $Author: dheltzel $ 
+# Author: Dennis Heltzel
+
+. /home/oracle/bin/ora_funcs.sh
+ORACLE_BASE=/u01/app/oracle
+ORACLE_HOME=${ORACLE_BASE}/product/12.1.0.2/DbHome_2
+PATH=$PATH:$ORACLE_HOME/bin
 
 CRED=${CRED:-/}
 RUN_DDL=Y
@@ -17,7 +22,6 @@ usage() {
 while getopts ":d:s:" opt; do
   case $opt in
     d)
-      TWO_TASK=$OPTARG
       DB_NAME=$OPTARG
       ;;
     s)
@@ -35,6 +39,9 @@ while getopts ":d:s:" opt; do
 done
 
 DB_NAME=${DB_NAME:-${ORACLE_SID}}
+oe ${ORACLE_SID}
+#echo "DB_NAME=${DB_NAME}:ORACLE_SID=${ORACLE_SID}:"
+
 BASE_NAME=ManageTS${DB_NAME}-`date "+%y%m%d%H%M"`
 REPORT_NAME=${BASE_NAME}.lst
 SQL_NAME=${BASE_NAME}.sql
