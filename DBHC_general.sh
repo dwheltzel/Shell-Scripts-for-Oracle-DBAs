@@ -1,9 +1,14 @@
-# Create a health check report
+#!/bin/bash
+# DBHC_general.sh - Create a health check report
 #
+# Author: Dennis Heltzel
+
+. /home/oracle/bin/ora_funcs.sh
+ORACLE_BASE=/u01/app/oracle
+ORACLE_HOME=${ORACLE_BASE}/product/12.1.0.2/DbHome_2
+PATH=$PATH:$ORACLE_HOME/bin
+
 CRED=${CRED:-/}
-if [ -r SetEnv.sh ] ; then
-. ./SetEnv.sh
-fi
 
 usage() {
       echo "Usage: $0 [-s] [-d database name] [-m email address]"
@@ -13,8 +18,48 @@ usage() {
       exit 1
 }
 
+export MAILX=/usr/local/bin/sendEmail-v1.56/sendEmail
+export SMTP_SERVER=mail.example.com
+export SENDER="`hostname`@example.com"
+
+RUNDIR=`dirname "${BASH_SOURCE[0]}"`
+. ${RUNDIR}/ora_funcs.sh
+BASEDIR=/cloudfs/logs
+
+# Handle parameters
+while getopts ":d:m:s" opt; do
+  case $opt in
+    s)
+      SPACE_USAGE=YES
+      ;;
+    d)
+      DB_NAME=$OPTARG
+      ;;
+    m)
+      export MAILTO=$OPTARG
+      ;;
+    \?)
+      echo "Invalid option: -$OPTARG" >&2
+      usage
+      ;;
+    :)
+      if [ "${OPTARG}" = 'm' ] ; then
+        export MAILTO=dba@example.com
+      else
+        echo "Option -$OPTARG requires an argument." >&2
+        usage
+      fi
+      ;;
+  esac
+done
+
+oe ${DB_NAME}
+DB_NAME=${DB_NAME:-${ORACLE_SID}}
+#echo "DB_NAME=${DB_NAME}:ORACLE_SID=${ORACLE_SID}:"
+#echo ${MAILTO}
+
 space_usage() {
-export REPORT_NAME=SpaceUsageReport_${DB_NAME}-`date "+%y%m%d%H%M"`.lst
+export REPORT_NAME=${BASEDIR}/SpaceUsageReport_${DB_NAME}-`date "+%y%m%d%H%M"`.lst
 export REPORT_TITLE="Space Usage Report for ${DB_NAME}"
 
 sqlplus -s ${CRED} as sysdba <<!
@@ -58,37 +103,7 @@ exit
 !
 }
 
-# Handle parameters
-while getopts ":d:m:" opt; do
-  case $opt in
-    s)
-      space_usage
-      ;;
-    d)
-      export TWO_TASK=$OPTARG
-      DB_NAME=$OPTARG
-      ;;
-    m)
-      export MAILTO=$OPTARG
-      ;;
-    \?)
-      echo "Invalid option: -$OPTARG" >&2
-      usage
-      ;;
-    :)
-      if [ "${OPTARG}" = 'm' ] ; then
-        export MAILTO=dba@example.com
-      else
-        echo "Option -$OPTARG requires an argument." >&2
-        usage
-      fi
-      ;;
-  esac
-done
-
-DB_NAME=${DB_NAME:-${ORACLE_SID}}
-
-export REPORT_NAME=GeneralHealthReport_${DB_NAME}-`date "+%y%m%d%H%M"`.lst
+export REPORT_NAME=${BASEDIR}/GeneralHealthReport_${DB_NAME}-`date "+%y%m%d%H%M"`.lst
 export REPORT_TITLE="Health Report for ${DB_NAME}"
 
 sqlplus -s ${CRED} as sysdba <<!
@@ -154,10 +169,10 @@ prompt Compile invalid synonyms
 select 'alter synonym '||owner||'.'||object_name||' compile;' from dba_objects where status='INVALID' and object_type='SYNONYM' and owner<>'PUBLIC'
 union
 select 'alter public synonym '||object_name||' compile;' from dba_objects where status='INVALID' and object_type='SYNONYM' and owner='PUBLIC';
-prompt Remove orphaned synonyms
-SELECT 'drop synonym '||s.owner||'.'||s.synonym_name||';' FROM dba_synonyms s, dba_tab_privs t
- WHERE s.table_owner=t.owner(+) AND s.table_name=t.table_name(+) AND t.table_name IS NULL
-   AND s.owner NOT IN ('PUBLIC','APEX_LISTENER','SYS','SYSTEM') ORDER BY 1;
+--prompt Remove orphaned synonyms
+--SELECT 'drop synonym '||s.owner||'.'||s.synonym_name||';' FROM dba_synonyms s, dba_tab_privs t
+-- WHERE s.table_owner=t.owner(+) AND s.table_name=t.table_name(+) AND t.table_name IS NULL
+--   AND s.owner NOT IN ('PUBLIC','APEX_LISTENER','SYS','SYSTEM') ORDER BY 1;
 prompt
 prompt Find any needed grants to insert into tables with sequences in the default values
 set serverout on size unlimited
@@ -217,18 +232,6 @@ SELECT 'exec DBMS_STATS.GATHER_TABLE_STATS('''||t.owner||''','''||t.table_name||
  AND s.stattype_locked IS NULL AND (t.last_analyzed < SYSDATE -  30 OR t.last_analyzed IS NULL) AND t.table_name NOT LIKE 'SYS%'
  ORDER BY t.num_rows;
 prompt
--- prompt ============ GoldenGate checks =========================================
--- SELECT DECODE(COUNT(*),1,'GG - Sequence modulo values OK','GG - Issue with sequences - check modulo values') FROM (
--- SELECT increment_by,MOD(last_number, 10),COUNT(*) FROM dba_sequences
--- WHERE sequence_owner IN ('SCOTT')
--- GROUP BY increment_by,MOD(last_number, 10));
--- prompt Find any identity columns (not supported by GoldenGate)
--- SELECT 'create sequence '||ic.owner||'.'||ic.table_name||'_SEQ start with '||to_char(s.last_number +1)||';'||CHR(10)||
--- 'alter table '||ic.owner||'.'||ic.table_name||' modify '||ic.column_name||' drop identity;'||CHR(10)||
--- 'alter table '||ic.owner||'.'||ic.table_name||' modify '||ic.column_name||' default on null '||ic.owner||'.'||ic.table_name||'_SEQ.nextval;' fix_cmd
--- FROM dba_tab_identity_cols ic JOIN dba_sequences s ON (ic.owner = s.sequence_owner AND ic.sequence_name = s.sequence_name)
--- ORDER BY 1;
-prompt
 prompt ============ Leftover Datapump Jobs =========================================
 SELECT owner_name,job_name,rtrim(operation) "OPERATION",rtrim(job_mode) "JOB_MODE",state,attached_sessions 
  FROM dba_datapump_jobs WHERE state = 'NOT RUNNING' ORDER BY 1, 2;
@@ -261,14 +264,6 @@ SELECT 'Owner problem: '||owner||'.'||trigger_name trig_name,table_owner||'.'||t
 -- Disabled triggers 
 SELECT status,owner||'.'||trigger_name FROM dba_triggers WHERE status <> 'ENABLED' AND owner NOT LIKE 'APEX%' AND owner NOT IN (SELECT owner FROM dba_logstdby_skip WHERE statement_opt = 'INTERNAL SCHEMA');
 prompt
-prompt ============ Fix Service Account Synonyms ===================
-prompt
-SELECT 'create synonym MC_SERV1.'||table_name||' for '||owner||'.'||table_name||';' FROM (SELECT owner, table_name FROM dba_tab_privs 
-WHERE grantee IN (SELECT DISTINCT granted_role FROM dba_role_privs START WITH grantee = 'SERV1' CONNECT BY PRIOR granted_role = grantee) OR grantee = 'SERV1'
-MINUS SELECT table_owner, table_name FROM dba_synonyms WHERE owner IN ('SERV1','PUBLIC'));
-SELECT 'create synonym MC_SERV2.'||table_name||' for '||owner||'.'||table_name||';' FROM (SELECT owner, table_name FROM dba_tab_privs 
-WHERE grantee IN (SELECT DISTINCT granted_role FROM dba_role_privs START WITH grantee = 'SERV2' CONNECT BY PRIOR granted_role = grantee) OR grantee = 'SERV2'
-MINUS SELECT table_owner, table_name FROM dba_synonyms WHERE owner IN ('SERV2','PUBLIC'));
 prompt ============ User Account Problems ==========================================
 set lines 120
 set pages 600
@@ -314,6 +309,5 @@ exit
 # If an email address is given, send the report to that address
 if [ -n "${MAILTO}" ] ; then
   echo Mailing ${REPORT_NAME} to ${MAILTO}
-  /usr/local/bin/sendEmail-v1.56/sendEmail -f $USER@`hostname` -t ${MAILTO} -u "${REPORT_TITLE}" -s mail.example.com -o message-file=${REPORT_NAME}
+  ${MAILX} -f ${SENDER} -t ${MAILTO} -s ${SMTP_SERVER} -u "${REPORT_TITLE}" -o message-file=${REPORT_NAME}
 fi
-
