@@ -2,7 +2,7 @@
 #
 # File $Id: save_db_configs.sh 2268 2014-01-15 17:53:20Z dheltzel $
 # Modified $Author: dheltzel $
-# Date $Date: 2014-01-15 17:53:20 +0000 (Wed, 15 Jan 2014) $
+# Date $Date: 2014-01-14 17:53:20 +0000 (Wed, 15 Jan 2014) $
 # Revision $Revision: 2268 $
 
 pathmunge () {
@@ -170,4 +170,40 @@ union
 select 'alter index ' || index_owner || '.' || index_name || ' rebuild partition ' || partition_name || ' nologging online' || ';' from dba_ind_partitions where status = 'UNUSABLE';
 exit
 !
+}
+
+# Checks for the existance of a PDB, 1 argument is required, the name of the PDB to check
+pdb_exists ()
+{
+ORACLE_PDB_SID=ORA\$ROOT
+  if [ $# -gt 1 ] ; then
+    return 1
+  fi
+
+  # Test the connection
+  (sqlplus -s / as sysdba <<!
+set pages 0
+show pdbs
+exit
+!
+) | grep $1 && return 0
+  return 1
+}
+
+# Checks status of a PDB, 1 argument is required, the name of the PDB to check
+is_pdb_open ()
+{
+ORACLE_PDB_SID=ORA\$ROOT
+  if [ $# -gt 1 ] ; then
+    return 1
+  fi
+
+  # Test the connection
+  (sqlplus -s / as sysdba <<!
+set pages 0
+show pdbs
+exit
+!
+) | grep $1 | grep "READ WRITE" && return 0
+  return 1
 }
