@@ -72,9 +72,6 @@ if pdb_exists ${DEST_NAME} >/dev/null ; then
   if [ ${REFRESH} == "TRUE" ] ; then
     tty -s && echo -e "Dropping PDB ${DEST_NAME}.\n<return> to continue, CTRL-C to abort.";read ok
     (${CONN_STR} <<!
-prompt set echo on;
-prompt set time on;
-prompt set timi on;
 alter pluggable database ${DEST_NAME} close;
 drop pluggable database ${DEST_NAME} including datafiles;
 exit
@@ -91,9 +88,6 @@ fi
 if is_pdb_open ${SOURCE_NAME} >/dev/null ; then
   tty -s && echo -e "Cloning ${SOURCE_NAME} to a new PDB called ${DEST_NAME}.\n<return> to continue, CTRL-C to abort.";read ok
 (${CONN_STR} <<!
-prompt set echo on;
-prompt set time on;
-prompt set timi on;
 create pluggable database ${DEST_NAME} from ${SOURCE_NAME} storage unlimited tempfile reuse file_name_convert=('/opt/app/oracle/oradata/DEVO/${SOURCE_NAME}', '/opt/app/oracle/oradata/DEVO/${DEST_NAME}');
 alter pluggable database ${DEST_NAME} open;
 alter pluggable database ${DEST_NAME} save state;
