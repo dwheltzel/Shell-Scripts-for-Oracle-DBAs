@@ -15,16 +15,9 @@ usage() {
 cd `dirname "${BASH_SOURCE[0]}"`
 RUNDIR=`pwd`
 . ${RUNDIR}/ora_funcs.sh
-EXCLUDE_SCHEMAS="'CSMIG','ORDDATA','ORDPLUGINS','SI_INFORMTN_SCHEMA','XS\$NULL','ANONYMOUS','MDDATA','MGMT_VIEW','SPATIAL_CSW_ADMIN_USR','SPATIAL_WFS_ADMIN_USR','DBSNMP','DIP','OPS\$ORACLE','ORACLE_OCM','OUTLN','ORACLE','XDB','PERFSTAT','SCOTT','FLOWS_FILES','GSMADMIN_INTERNAL','DBSFWUSER'"
+EXCLUDE_SCHEMAS="(SELECT owner FROM dba_logstdby_skip WHERE statement_opt = 'INTERNAL SCHEMA')"
 BASEDIR=~/saved_configs
-CDB_CONN_STR='sqlplus -s / as sysdba'
-PDB_CONN_STR='sqlplus -s system/welcome1@localhost:1521/'
-CONN_STR=${CDB_CONN_STR}
-
-#echo ${CDB_CONN_STR}
-#echo ${PDB_CONN_STR}test
-#echo ${CONN_STR}
-#exit
+CONN_STR='sqlplus -s / as sysdba'
 
 # Handle parameters
 while getopts ":d:g:" opt; do
@@ -283,6 +276,60 @@ SELECT 'column,'||owner||'.'||table_name||','||column_name||','||data_type||','|
 EXIT
 !
 ) |sort -u > ${COLUMNLIST_NAME}
+}
+
+gather_ddl() {
+  # DDL listing
+  # Run for each PDB
+  # Run for each schema
+  export SCHEMA_LIST=${BASEDIR}/config/`hostname -s`/schemas-${DB_NAME}.lst
+  (${CONN_STR} <<!
+set pagesize 0;
+set linesize 500;
+set head off;
+set long 15000;
+set feedback off;
+SELECT DISTINCT owner FROM dba_tables WHERE owner NOT IN (SELECT owner FROM dba_logstdby_skip WHERE statement_opt = 'INTERNAL SCHEMA') AND owner NOT IN ('MIGRATION') group by owner;
+exit;
+!
+) > ${SCHEMA_LIST}
+
+while IFS= read -r schema; do
+  echo "S: $schema"
+  export DDL_NAME=${BASEDIR}/config/`hostname -s`/ddl-${DB_NAME}-${schema}.lst
+  tty -s && echo "DDL Generation: $DDL_NAME"
+  (${CONN_STR} <<!
+set pagesize 0;
+set linesize 500;
+set head off;
+set long 15000;
+set feedback off;
+
+exec DBMS_METADATA.SET_TRANSFORM_PARAM(DBMS_METADATA.session_transform, 'CONSTRAINTS_AS_ALTER', true);
+exec DBMS_METADATA.SET_TRANSFORM_PARAM(DBMS_METADATA.session_transform, 'REF_CONSTRAINTS', true);
+exec DBMS_METADATA.SET_TRANSFORM_PARAM(DBMS_METADATA.session_transform, 'SQLTERMINATOR', true);
+exec DBMS_METADATA.SET_TRANSFORM_PARAM(DBMS_METADATA.session_transform, 'STORAGE', false);
+exec DBMS_METADATA.SET_TRANSFORM_PARAM(DBMS_METADATA.session_transform, 'TABLESPACE', true);
+exec DBMS_METADATA.SET_TRANSFORM_PARAM(DBMS_METADATA.session_transform, 'LOB_STORAGE', 'SECUREFILE');
+SELECT '-- Data schema definition for '||GLOBAL_NAME FROM GLOBAL_NAME;
+SELECT '-- '||BANNER FROM V\$VERSION; 
+SELECT '-- Timestamp: '||current_timestamp FROM DUAL;
+SELECT '-- Database Name: '||global_name FROM global_name;
+SELECT '-- Table definitions' FROM DUAL;
+SELECT dbms_metadata.get_ddl('TABLE',table_name,'$schema') FROM dba_tables WHERE owner = '$schema';
+SELECT '-- Table constraints' FROM DUAL;
+SELECT dbms_metadata.get_dependent_ddl('REF_CONSTRAINT', table_name, '$schema') FROM dba_tables t WHERE owner = '$schema'
+and EXISTS (SELECT 1 FROM user_constraints WHERE table_name = t.table_name AND constraint_type = 'R');
+SELECT '-- Indexes' FROM DUAL;
+SELECT dbms_metadata.get_ddl('INDEX',index_name,'$schema') FROM dba_indexes WHERE owner = '$schema' ORDER BY index_name;
+SELECT '-- Views' FROM DUAL;
+SELECT dbms_metadata.get_ddl('VIEW',view_name,'$schema') FROM dba_views WHERE owner = '$schema' ORDER BY view_name;
+SELECT '-- Sequences' FROM DUAL;
+SELECT dbms_metadata.get_ddl('SEQUENCE', sequence_name, sequence_owner) FROM dba_sequences WHERE sequence_owner = UPPER('$schema') ORDER BY sequence_name;
+exit;
+!
+) > ${DDL_NAME}
+done < ${SCHEMA_LIST}
 }
 
 gather_invalid() {
@@ -550,7 +597,8 @@ gather_server() {
 
 one_cdb() {
     tty -s && echo ""
-echo "ORACLE_SID ${ORACLE_SID}"
+    export ORACLE_PDB_SID='CDB$ROOT'
+#echo "ORACLE_SID ${ORACLE_SID}"
     test_connect ${ORACLE_SID} #|| continue
     export ORACLE_SID
     DB_NAME=${ORACLE_SID}
@@ -572,9 +620,10 @@ echo "ORACLE_SID ${ORACLE_SID}"
       # all PDB's
       for pdb_name in `cat ${PDBLIST_NAME}`
       do
-        CONN_STR=${PDB_CONN_STR}${pdb_name}
-echo ${CONN_STR}
+        export ORACLE_PDB_SID=${pdb_name}
+        #echo ${ORACLE_PDB_SID}
         DB_NAME=${pdb_name}
+        gather_ddl UPD
         gather_users
         gather_expiring
         gather_invalid
@@ -611,3 +660,4 @@ fi
 #grep -l ORA-01219 ${BASEDIR}/config/`hostname -s`/*|xargs rm -f
 # Remove any empty files
 find ${BASEDIR}/config/`hostname -s` -name "*lst" -size 0 -exec rm {} \;
+

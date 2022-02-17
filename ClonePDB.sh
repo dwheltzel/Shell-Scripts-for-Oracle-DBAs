@@ -42,7 +42,6 @@ done
 WORK_DIR=${WORK_DIR:-`pwd`}
 ORACLE_PDB_SID=ORA\$ROOT
 SOURCE_OPEN=`is_pdb_open ${SOURCE_NAME} >/dev/null`
-DEST_EXISTS=`pdb_exists ${DEST_NAME} >/dev/null`
 
 # Check that source and dest are different
 if [ ${SOURCE_NAME} == ${DEST_NAME} ] ; then
@@ -60,23 +59,41 @@ if [ ${DEST_NAME} == "ORA\$ROOT" ] || [ ${DEST_NAME} == "PDB\$SEED" ] ; then
   exit 1
 fi
 
-#if pdb_exists ${SOURCE_NAME} >/dev/null ; then
-#  tty -s && echo "${SOURCE_NAME} is a valid PDB"
-#fi
-#if ${SOURCE_OPEN} ; then
-#  tty -s && echo "PDB ${SOURCE_NAME} is open"
-#fi
-
-# Check if the destination exists and if refresh is selected
-if pdb_exists ${DEST_NAME} >/dev/null ; then
-  if [ ${REFRESH} == "TRUE" ] ; then
-    tty -s && echo -e "Dropping PDB ${DEST_NAME}.\n<return> to continue, CTRL-C to abort.";read ok
+drop_pdb () {
+  tty -s && echo -e "Dropping PDB ${DEST_NAME}.\n<return> to continue, CTRL-C to abort.";read ok
+  if is_pdb_open ${DEST_NAME} ; then
+    tty -s && echo "PDB ${DEST_NAME} is open, closing . . ."
     (${CONN_STR} <<!
-alter pluggable database ${DEST_NAME} close;
+alter session set container = ${DEST_NAME};
+shutdown abort
+exit
+!
+) |tee ${WORK_DIR}/STOP_${DEST_NAME}.log
+  fi
+  tty -s && echo "Dropping PDB ${DEST_NAME} . . ."
+  (${CONN_STR} <<!
+alter session set container ORA\$ROOT;
 drop pluggable database ${DEST_NAME} including datafiles;
 exit
 !
 ) |tee ${WORK_DIR}/DROP_${DEST_NAME}.log
+}
+
+clone_pdb () {
+  tty -s && echo -e "Cloning ${SOURCE_NAME} to a new PDB called ${DEST_NAME}.\n<return> to continue, CTRL-C to abort.";read ok
+(${CONN_STR} <<!
+create pluggable database ${DEST_NAME} from ${SOURCE_NAME} storage unlimited tempfile reuse file_name_convert=('/opt/app/oracle/oradata/DEVO/${SOURCE_NAME}', '/opt/app/oracle/oradata/DEVO/${DEST_NAME}');
+alter pluggable database ${DEST_NAME} open;
+alter pluggable database ${DEST_NAME} save state;
+exit
+!
+) |tee ${WORK_DIR}/Clone_${SOURCE_NAME}_to_${DEST_NAME}.log
+}
+
+# Check if the destination exists and if refresh is selected
+if pdb_exists ${DEST_NAME} >/dev/null ; then
+  if [ ${REFRESH} == "TRUE" ] ; then
+    drop_pdb
   else
     tty -s && echo "PDB ${DEST_NAME} exists and refresh option is not selected"
     exit 1
@@ -86,15 +103,7 @@ else
 fi
 
 if is_pdb_open ${SOURCE_NAME} >/dev/null ; then
-  tty -s && echo -e "Cloning ${SOURCE_NAME} to a new PDB called ${DEST_NAME}.\n<return> to continue, CTRL-C to abort.";read ok
-(${CONN_STR} <<!
-create pluggable database ${DEST_NAME} from ${SOURCE_NAME} storage unlimited tempfile reuse file_name_convert=('/opt/app/oracle/oradata/DEVO/${SOURCE_NAME}', '/opt/app/oracle/oradata/DEVO/${DEST_NAME}');
-alter pluggable database ${DEST_NAME} open;
-alter pluggable database ${DEST_NAME} save state;
-exit
-!
-) |tee ${WORK_DIR}/Clone_${SOURCE_NAME}_to_${DEST_NAME}.log
-
+  clone_pdb
 else
   tty -s && echo "PDB ${SOURCE_NAME} is not open"
 fi
