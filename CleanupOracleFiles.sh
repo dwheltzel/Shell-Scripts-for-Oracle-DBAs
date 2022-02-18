@@ -2,9 +2,10 @@
 # 
 # Author: Dennis Heltzel 02/15/2022
 
-LOGDIR=/home/oracle/logs
 export ORACLE_HOME=/opt/app/oracle/19c
 DIAGDIR=/opt/app/oracle/diag/rdbms
+LOG_DIR=~/logs
+[ -d ${LOG_DIR} ] || mkdir -p ${LOG_DIR}
 RUNDIR=`dirname "${BASH_SOURCE[0]}"`
 . ${RUNDIR}/ora_funcs.sh
 
@@ -17,7 +18,7 @@ usage() {
 RUN_DATE=$(date +%y-%m-%d_%H%M%S)
 
 # Handle parameters
-while getopts "d:p:i:t:l:cs" opt; do
+while getopts "i:" opt; do
   case $opt in
     i)
       INTERACTIVE=YES
@@ -33,7 +34,7 @@ while getopts "d:p:i:t:l:cs" opt; do
   esac
 done
 
-LOGFILE=${LOGDIR}/RMAN_${TAGNAME}.log
+LOGFILE=${LOG_DIR}/RMAN_${TAGNAME}.log
 
 if [ "${USER}" == "root" ] ; then
   # First, cleanup system files

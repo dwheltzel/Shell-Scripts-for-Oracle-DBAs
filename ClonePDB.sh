@@ -2,6 +2,15 @@
 # 
 # Author: Dennis Heltzel 01/29/2022
 
+LOG_DIR=~/logs
+[ -d ${LOG_DIR} ] || mkdir -p ${LOG_DIR}
+
+RUNDIR=`dirname "${BASH_SOURCE[0]}"`
+. ${RUNDIR}/ora_funcs.sh
+REFRESH=FALSE
+DBNAME=${ORACLE_PDB_SID:-${ORACLE_SID}}
+CONN_STR='sqlplus -s / as sysdba'
+
 usage() {
   echo "Usage: $0 -s source -d destination -r"
   echo "  -s source PDB name - defaults to ${DBNAME}"
@@ -9,12 +18,6 @@ usage() {
   echo "  -r refresh the clone, dropping the destination PDB first if it exists"
   exit 1
 }
-
-DBNAME=${ORACLE_PDB_SID:-${ORACLE_SID}}
-CONN_STR='sqlplus -s / as sysdba'
-RUNDIR=`dirname "${BASH_SOURCE[0]}"`
-. ${RUNDIR}/ora_funcs.sh
-REFRESH=FALSE
 
 # Handle parameters
 while getopts "s:d:r" opt; do
@@ -39,9 +42,7 @@ while getopts "s:d:r" opt; do
   esac
 done
 
-WORK_DIR=${WORK_DIR:-`pwd`}
 ORACLE_PDB_SID=ORA\$ROOT
-SOURCE_OPEN=`is_pdb_open ${SOURCE_NAME} >/dev/null`
 
 # Check that source and dest are different
 if [ ${SOURCE_NAME} == ${DEST_NAME} ] ; then
@@ -64,22 +65,25 @@ drop_pdb () {
   if is_pdb_open ${DEST_NAME} ; then
     tty -s && echo "PDB ${DEST_NAME} is open, closing . . ."
     (${CONN_STR} <<!
+WHENEVER SQLERROR EXIT SQL.SQLCODE
 alter session set container = ${DEST_NAME};
 shutdown abort
 exit
 !
-) |tee ${WORK_DIR}/STOP_${DEST_NAME}.log
+) |tee ${LOG_DIR}/STOP_${DEST_NAME}.log
   fi
   tty -s && echo "Dropping PDB ${DEST_NAME} . . ."
   (${CONN_STR} <<!
-alter session set container ORA\$ROOT;
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+alter session set container = ORA\$ROOT;
 drop pluggable database ${DEST_NAME} including datafiles;
 exit
 !
-) |tee ${WORK_DIR}/DROP_${DEST_NAME}.log
+) |tee ${LOG_DIR}/DROP_${DEST_NAME}.log
 }
 
 clone_pdb () {
+  is_pdb_open ${SOURCE_NAME} || exit 1 >/dev/null
   tty -s && echo -e "Cloning ${SOURCE_NAME} to a new PDB called ${DEST_NAME}.\n<return> to continue, CTRL-C to abort.";read ok
 (${CONN_STR} <<!
 create pluggable database ${DEST_NAME} from ${SOURCE_NAME} storage unlimited tempfile reuse file_name_convert=('/opt/app/oracle/oradata/DEVO/${SOURCE_NAME}', '/opt/app/oracle/oradata/DEVO/${DEST_NAME}');
@@ -87,7 +91,7 @@ alter pluggable database ${DEST_NAME} open;
 alter pluggable database ${DEST_NAME} save state;
 exit
 !
-) |tee ${WORK_DIR}/Clone_${SOURCE_NAME}_to_${DEST_NAME}.log
+) |tee ${LOG_DIR}/Clone_${SOURCE_NAME}_to_${DEST_NAME}.log
 }
 
 # Check if the destination exists and if refresh is selected
