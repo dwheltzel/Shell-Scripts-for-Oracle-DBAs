@@ -1,0 +1,31 @@
+-- PDB access commands
+select name from v$containers where name not in ('CDB$ROOT','PDB$SEED');
+alter session set container=<PDB name>;
+select sys_context('USERENV','CON_NAME') from dual;
+
+-- startup state of the PDB's
+select CON_NAME,STATE from DBA_PDB_SAVED_STATES;
+ALTER PLUGGABLE DATABASE SANDBOX SAVE STATE; -- saves the current open/mounted state, viewed in DBA_PDB_SAVED_STATES
+
+-- archivelog mode (from CDB$ROOT)
+Select NAME, CREATED, LOG_MODE from V$DATABASE;
+shutdown immediate
+startup mount
+alter database archivelog;
+alter database open;
+
+-- Local undo mode (should return true)
+select property_name, property_value from database_properties where property_name = 'LOCAL_UNDO_ENABLED';
+
+# create new PDB
+dbca -silent -createPluggableDatabase -sourceDB <CDB name> -pdbName sandbox 
+
+# Clone a PDB
+dbca -silent -createpluggabledatabase -sourcedb <CDB name> -createpdbfrom PDB -pdbName <PDB name> -sourcepdb sandbox
+
+# Drop a PDB
+1) Shutdown the PDB - alter session set container=<PDB name>; shutdown immediate
+2) Switch back to CDB and drop the PDB - alter session set container=CDB$ROOT; DROP PLUGGABLE DATABASE <PDB name> INCLUDING DATAFILES;
+3) Remove any remaining OS files:
+  rmdir /opt/oracle/oradata/<CDB name>/<PDB name>
+  rm -rf /opt/oracle/cfgtoollogs/dbca/<CDB name>/<PDB name>

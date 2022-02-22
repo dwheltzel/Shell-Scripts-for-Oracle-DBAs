@@ -1,0 +1,24 @@
+export ORACLE_BASE=/opt/app/oracle
+export ORACLE_HOME=$ORACLE_BASE/19c
+export PATH=$PATH:$ORACLE_HOME/bin
+export ORACLE_SID=<CDB name>
+export ORACLE_PDB_SID=<PDB name>
+ADMIN_PWD=<set this>
+
+# dbca_create_cdb.sh
+dbca -silent -createDatabase \
+ -gdbName $ORACLE_SID -templateName General_Purpose.dbc \
+ -createAsContainerDatabase true -numberOfPDBs 0 \
+ -databaseConfigType SINGLE -storageType FS \
+ -sysPassword $ADMIN_PWD -systemPassword $ADMIN_PWD \
+ -datafileDestination {ORACLE_BASE}/oradata/{DB_UNIQUE_NAME}/ \
+ -recoveryAreaDestination {ORACLE_BASE}/fast_recovery_area/{DB_UNIQUE_NAME} \
+ -variables ORACLE_BASE_HOME=$ORACLE_HOME,ORACLE_BASE=$ORACLE_BASE,DB_NAME=$ORACLE_SID,ORACLE_HOME=$ORACLE_HOME \
+ -initParams NLS_TIMESTAMP_FORMAT='YYYY-MM-DD-HH24.MI.SS.FF6',NLS_DATE_FORMAT='YYYY-MM-DD',db_unique_name=$ORACLE_SID,undo_tablespace=UNDOTBS1,control_files=\("{ORACLE_BASE}/oradata/{DB_UNIQUE_NAME}/control01.ctl", "{ORACLE_BASE}/fast_recovery_area/{DB_UNIQUE_NAME}/control02.ctl"\),remote_login_passwordfile=EXCLUSIVE,audit_file_dest={ORACLE_BASE}/admin/{DB_UNIQUE_NAME}/adump,db_recovery_file_dest_size=50GB,log_archive_format=%t_%s_%r.dbf,compatible=19.0.0,db_name=$ORACLE_SID,db_recovery_file_dest={ORACLE_BASE}/fast_recovery_area/{DB_UNIQUE_NAME},audit_trail=db \
+ -sampleSchema false -memoryPercentage 40 -databaseType OLTP
+
+# create new PDB
+dbca -silent -createPluggableDatabase -sourceDB $ORACLE_SID -pdbName $ORACLE_PDB_SID -pdbDatafileDestination $ORACLE_BASE/oradata/$ORACLE_SID/$ORACLE_PDB_SID -pdbAdminPassword $ADMIN_PWD
+
+# delete PDB
+dbca -silent -deleteDatabase -forceArchiveLogDeletion -sourceDB $ORACLE_SID 
