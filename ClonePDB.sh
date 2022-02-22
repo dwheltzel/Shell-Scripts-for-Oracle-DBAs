@@ -16,11 +16,12 @@ usage() {
   echo "  -s source PDB name - defaults to ${DBNAME}"
   echo "  -d destination PDB name (required)"
   echo "  -r refresh the clone, dropping the destination PDB first if it exists"
+  echo "  -c CDB name, defaults to ORACLE_SID=$ORACLE_SID"
   exit 1
 }
 
 # Handle parameters
-while getopts "s:d:r" opt; do
+while getopts "s:d:r:c" opt; do
   case $opt in
     s)
       SOURCE_NAME=$OPTARG
@@ -30,6 +31,9 @@ while getopts "s:d:r" opt; do
       ;;
     r)
       REFRESH=TRUE
+      ;;
+    c)
+      ORACLE_SID=$OPTARG
       ;;
     \?)
       echo "Invalid option: -$OPTARG" >&2
@@ -73,9 +77,8 @@ exit
 ) |tee ${LOG_DIR}/STOP_${DEST_NAME}.log
   fi
   tty -s && echo "Dropping PDB ${DEST_NAME} . . ."
+  ORACLE_PDB_SID=CDB\$ROOT
   (${CONN_STR} <<!
-WHENEVER SQLERROR EXIT SQL.SQLCODE
-alter session set container = ORA\$ROOT;
 drop pluggable database ${DEST_NAME} including datafiles;
 exit
 !
@@ -86,7 +89,7 @@ clone_pdb () {
   is_pdb_open ${SOURCE_NAME} || exit 1 >/dev/null
   tty -s && echo -e "Cloning ${SOURCE_NAME} to a new PDB called ${DEST_NAME}.\n<return> to continue, CTRL-C to abort.";read ok
 (${CONN_STR} <<!
-create pluggable database ${DEST_NAME} from ${SOURCE_NAME} storage unlimited tempfile reuse file_name_convert=('/opt/app/oracle/oradata/DEVO/${SOURCE_NAME}', '/opt/app/oracle/oradata/DEVO/${DEST_NAME}');
+create pluggable database ${DEST_NAME} from ${SOURCE_NAME} storage unlimited tempfile reuse file_name_convert=('/opt/app/oracle/oradata/${ORACLE_SID}/${SOURCE_NAME}', '/opt/app/oracle/oradata/${ORACLE_SID}/${DEST_NAME}');
 alter pluggable database ${DEST_NAME} open;
 alter pluggable database ${DEST_NAME} save state;
 exit

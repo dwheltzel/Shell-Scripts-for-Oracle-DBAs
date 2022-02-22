@@ -299,11 +299,7 @@ while IFS= read -r schema; do
   export DDL_NAME=${BASEDIR}/config/`hostname -s`/ddl-${DB_NAME}-${schema}.lst
   tty -s && echo "DDL Generation: $DDL_NAME"
   (${CONN_STR} <<!
-set pagesize 0;
-set linesize 500;
-set head off;
-set long 15000;
-set feedback off;
+SET LONG 20000 LONGCHUNKSIZE 20000 PAGESIZE 0 LINESIZE 1000 FEEDBACK OFF VERIFY OFF TRIMSPOOL ON HEAD OFF
 
 exec DBMS_METADATA.SET_TRANSFORM_PARAM(DBMS_METADATA.session_transform, 'CONSTRAINTS_AS_ALTER', true);
 exec DBMS_METADATA.SET_TRANSFORM_PARAM(DBMS_METADATA.session_transform, 'REF_CONSTRAINTS', true);
@@ -311,6 +307,7 @@ exec DBMS_METADATA.SET_TRANSFORM_PARAM(DBMS_METADATA.session_transform, 'SQLTERM
 exec DBMS_METADATA.SET_TRANSFORM_PARAM(DBMS_METADATA.session_transform, 'STORAGE', false);
 exec DBMS_METADATA.SET_TRANSFORM_PARAM(DBMS_METADATA.session_transform, 'TABLESPACE', true);
 exec DBMS_METADATA.SET_TRANSFORM_PARAM(DBMS_METADATA.session_transform, 'LOB_STORAGE', 'SECUREFILE');
+exec DBMS_METADATA.SET_TRANSFORM_PARAM(DBMS_METADATA.session_transform, 'PRETTY', true);
 SELECT '-- Data schema definition for '||GLOBAL_NAME FROM GLOBAL_NAME;
 SELECT '-- '||BANNER FROM V\$VERSION; 
 SELECT '-- Timestamp: '||current_timestamp FROM DUAL;
