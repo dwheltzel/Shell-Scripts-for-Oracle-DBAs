@@ -19,6 +19,7 @@ usage() {
 
 CDBNAME=${ORACLE_SID}
 PDBNAME=${ORACLE_PDB_SID}
+ORACLE_PDB_SID=CDB\$ROOT
 CONN_STR='sqlplus -s / as sysdba'
 RUNDIR=`dirname "${BASH_SOURCE[0]}"`
 . ${RUNDIR}/ora_funcs.sh
@@ -69,7 +70,7 @@ while getopts "d:p:i:t:l:ecs" opt; do
   esac
 done
 
-oe ${CDBNAME}
+oe ${CDBNAME} >/dev/null
 # Set tagname
 if [ -z ${TAGNAME} ] ; then
   if [ -z ${LEVEL} ] ; then
@@ -117,6 +118,7 @@ crosscheck () {
 connect target /
 set echo on;
 crosscheck archivelog all;
+delete noprompt expired archivelog all;
 crosscheck backup;
 delete noprompt obsolete;
 exit
