@@ -148,8 +148,42 @@ exit
 ) > ${LOGFILE}
 }
 
-# Main logic
+# This lists the PDB's and their backup locations in a file, then it creates a describe XML file for each PDB
+desc_pdbs () {
+  DIR_DATE=$(date +%Y_%m_%d)
+  PDBLIST_NAME=${LOGDIR}/PDB.lst
+  BACKUPLST_NAME=${LOGDIR}/Latest_PDB_backups.lst
+  :>${BACKUPLST_NAME}
+  RECOVERY_DEST=`${CONN_STR} <<!
+set pages 0
+select value from v\\$parameter where name = 'db_recovery_file_dest';
+exit
+!`
+  # Get list of PDB's to process
+  #tty -s && echo "PDB list: $PDBLIST_NAME"
+  (${CONN_STR} <<! 
+set head off
+set pages 0
+set feed off
+select name||'  '||guid from v\$containers where name not in ('CDB\$ROOT','PDB\$SEED');
+exit
+!
+) |sed '/^[[:space:]]*$/d' > ${PDBLIST_NAME}
+  while read pdb_name pdb_guid
+  do
+    echo "Backups for ${pdb_name} are in ${RECOVERY_DEST}/${ORACLE_SID}/${pdb_guid}/backupset/${DIR_DATE}" >>${BACKUPLST_NAME}
+    ORACLE_PDB_SID=${pdb_name}
+    (${CONN_STR} <<!
+      set feed off
+      exec dbms_pdb.describe('${RECOVERY_DEST}/${ORACLE_SID}/${pdb_guid}/backupset/${DIR_DATE}/${pdb_name}.xml');
+      exit
+!
+)
+  done < "${PDBLIST_NAME}"
+  ORACLE_PDB_SID=
+}
 
+# Main logic
 # Show and/or set the config params (only needed for new databases
 if [ "${SHOW_CFG}" == 'YES' ] ; then
   showConfig
@@ -177,3 +211,6 @@ else
   tty -s && echo "Performing an incremental ${LEVEL} backup . . ."
   incrLevel ${LEVEL}
 fi
+
+desc_pdbs
+

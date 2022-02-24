@@ -163,6 +163,7 @@ exit
   (${CONN_STR} <<! 
 set head off
 set pages 0
+set feed off
 select name from v\$containers where name not in ('CDB\$ROOT','PDB\$SEED');
 exit
 !
