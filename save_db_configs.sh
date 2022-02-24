@@ -153,6 +153,7 @@ gather_containers() {
   (${CONN_STR} <<! 
 set head off
 set pages 0
+set feed off
 select name||' '||con_id||' '||sys_context('USERENV','SERVER_HOST')||' '||sys_context('USERENV','DB_NAME')||' '||open_mode from v\$containers;
 exit
 !
@@ -621,7 +622,7 @@ one_cdb() {
         export ORACLE_PDB_SID=${pdb_name}
         #echo ${ORACLE_PDB_SID}
         DB_NAME=${pdb_name}
-        gather_ddl UPD
+        gather_ddl
         gather_users
         gather_expiring
         gather_invalid

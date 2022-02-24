@@ -172,7 +172,8 @@ exit
   while read pdb_name pdb_guid
   do
     echo "Backups for ${pdb_name} are in ${RECOVERY_DEST}/${ORACLE_SID}/${pdb_guid}/backupset/${DIR_DATE}" >>${BACKUPLST_NAME}
-    ORACLE_PDB_SID=${pdb_name}
+    export ORACLE_PDB_SID=${pdb_name}
+echo "${ORACLE_PDB_SID}"
     (${CONN_STR} <<!
       set feed off
       exec dbms_pdb.describe('${RECOVERY_DEST}/${ORACLE_SID}/${pdb_guid}/backupset/${DIR_DATE}/${pdb_name}.xml');
@@ -184,6 +185,8 @@ exit
 }
 
 # Main logic
+desc_pdbs
+exit 1
 # Show and/or set the config params (only needed for new databases
 if [ "${SHOW_CFG}" == 'YES' ] ; then
   showConfig

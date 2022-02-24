@@ -8,6 +8,7 @@ LOG_DIR=~/logs
 [ -d ${LOG_DIR} ] || mkdir -p ${LOG_DIR}
 RUNDIR=`dirname "${BASH_SOURCE[0]}"`
 . ${RUNDIR}/ora_funcs.sh
+exec > ${LOG_DIR}/CleanupOracleFiles.log 2>&1
 
 usage() {
   echo "Usage: $0 [-i]"
@@ -34,7 +35,7 @@ while getopts "i:" opt; do
   esac
 done
 
-LOGFILE=${LOG_DIR}/RMAN_${TAGNAME}.log
+LOGFILE=${LOG_DIR}/CleanupOracleFiles.log
 
 if [ "${USER}" == "root" ] ; then
   # First, cleanup system files
@@ -49,19 +50,16 @@ if [ "${USER}" == "root" ] ; then
   #:> /var/spool/mail/root
   #:> /var/log/rdbmsaudit.log
   #:> /var/log/asmaudit.log
-fi
 
-## Oracle file cleanup
-
-# Migrate schemas before we run purgelogs
-ADR_HOME=`ls -d ${DIAGDIR}/*/${ORACLE_SID}|cut -c17-`
-tty -s && echo $ADR_HOME
-${ORACLE_HOME}/bin/adrci exec="set homepath $ADR_HOME; migrate schema"
-# Fix permissions - If these pv dirs are owned by root, you can't login locally
-#chown -R oracle /opt/app/oracle/diag/rdbms/*/*/metadata_pv
-
-if [ -x purgeLogs ] ; then
-  purgeLogs -orcl 1 -osw 1 -oda 1 -extra /tmp:1,/var/log:1
+  # Migrate schemas before we run purgelogs
+  ADR_HOME=`ls -d ${DIAGDIR}/*/${ORACLE_SID}|cut -c17-`
+  tty -s && echo $ADR_HOME
+  ${ORACLE_HOME}/bin/adrci exec="set homepath $ADR_HOME; migrate schema"
+  # Fix permissions - If these pv dirs are owned by root, you can't login locally
+  #chown -R oracle /opt/app/oracle/diag/rdbms/*/*/metadata_pv
+  if [ -x ${RUNDIR}/purgeLogs ] ; then
+    ${RUNDIR}/purgeLogs -orcl 1 -osw 1 -oda 1 -extra /tmp:1,/var/log:1
+  fi
 fi
 
 cd $DIAGDIR
@@ -91,5 +89,5 @@ find $DIAGDIR -mount -name "*.trm" -type f -size +0 -mmin +10 -execdir cp /dev/n
 #find $DIAGDIR -mount -name "*.trm" -type f -size +0 -execdir cp /dev/null {} \;
 
 # Check ownership of directories
-ls -ld /opt/app/oracle/diag/rdbms/*/*/metadata_pv
+tty -s && ls -ld /opt/app/oracle/diag/rdbms/*/*/metadata_pv
 
