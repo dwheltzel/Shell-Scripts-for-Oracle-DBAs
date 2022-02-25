@@ -80,6 +80,11 @@ if [ -z ${TAGNAME} ] ; then
   fi 
 fi
 LOGFILE=${LOGDIR}/RMAN_${TAGNAME}.log
+RECOVERY_DEST=`${CONN_STR} <<!
+set pages 0
+select value from v\\$parameter where name = 'db_recovery_file_dest';
+exit
+!`
 
 #RMANBACKUP_MOUNTPOINT1=/u01/oracle/rman_bkp
 #PARALLELISM=4
@@ -148,17 +153,8 @@ exit
 ) > ${LOGFILE}
 }
 
-# This lists the PDB's and their backup locations in a file, then it creates a describe XML file for each PDB
-desc_pdbs () {
-  DIR_DATE=$(date +%Y_%m_%d)
-  PDBLIST_NAME=${LOGDIR}/PDB.lst
-  BACKUPLST_NAME=${LOGDIR}/Latest_PDB_backups.lst
-  :>${BACKUPLST_NAME}
-  RECOVERY_DEST=`${CONN_STR} <<!
-set pages 0
-select value from v\\$parameter where name = 'db_recovery_file_dest';
-exit
-!`
+# List of PDBs
+pdb_list () {
   # Get list of PDB's to process
   #tty -s && echo "PDB list: $PDBLIST_NAME"
   (${CONN_STR} <<! 
@@ -169,6 +165,26 @@ select name||'  '||guid from v\$containers where name not in ('CDB\$ROOT','PDB\$
 exit
 !
 ) |sed '/^[[:space:]]*$/d' > ${PDBLIST_NAME}
+}
+
+# Make symlinks so the PDB backups are more easily located
+make_symlinks () {
+  cd ${RECOVERY_DEST}/${ORACLE_SID}
+  pdb_list
+  while read pdb_name pdb_guid
+  do
+    rm -f ${pdb_name}
+    ln -s ${pdb_guid} ${pdb_name}
+  done < "${PDBLIST_NAME}"
+}
+
+# This lists the PDB's and their backup locations in a file, then it creates a describe XML file for each PDB
+desc_pdbs () {
+  DIR_DATE=$(date +%Y_%m_%d)
+  PDBLIST_NAME=${LOGDIR}/PDB.lst
+  BACKUPLST_NAME=${LOGDIR}/Latest_PDB_backups.lst
+  :>${BACKUPLST_NAME}
+  pdb_list
   while read pdb_name pdb_guid
   do
     echo "Backups for ${pdb_name} are in ${RECOVERY_DEST}/${ORACLE_SID}/${pdb_guid}/backupset/${DIR_DATE}" >>${BACKUPLST_NAME}
@@ -185,8 +201,6 @@ echo "${ORACLE_PDB_SID}"
 }
 
 # Main logic
-desc_pdbs
-exit 1
 # Show and/or set the config params (only needed for new databases
 if [ "${SHOW_CFG}" == 'YES' ] ; then
   showConfig
@@ -216,4 +230,4 @@ else
 fi
 
 desc_pdbs
-
+make_symlinks
