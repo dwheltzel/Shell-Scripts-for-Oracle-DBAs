@@ -1,3 +1,4 @@
+-- Place this file in $ORACLE_HOME/sqlplus/admin
 --
 -- Copyright (c) 1988, 2005, Oracle.  All Rights Reserved.
 --
