@@ -4,13 +4,13 @@
 
 RUNDIR=`dirname "${BASH_SOURCE[0]}"`
 . ${RUNDIR}/ora_funcs.sh
-export ORACLE_SID=FTSPRD1
+export ORACLE_SID=CDB1
 #export ORACLE_BASE=/i01/app/oracle
 #export ORACLE_HOME=$ORACLE_BASE/product/11.2.0.3/db1
 #export PATH=$PATH:$ORACLE_HOME/bin
 
 CRED=${CRED:-/}
-LOG_DIR=/cloudfs/logs
+LOG_DIR=~/logs
 LOG_FILE=$LOG_DIR/FRA_$ORACLE_SID.log
 A1_FILE=$LOG_DIR/FRA_ActualUsage.last
 A2_FILE=$LOG_DIR/FRA_LogicalUsage.last
@@ -42,8 +42,8 @@ while getopts ":l:a:d:e:r" opt; do
     e)
       export MAIL_TO=$OPTARG
       export MAILX=/usr/local/bin/sendEmail-v1.56/sendEmail
-      export SMTP_SERVER=mail.ftscc.net
-      export SENDER="`hostname`@example.com"
+      export SMTP_SERVER=localhost
+      export SENDER="`hostname`@comspoc.com"
       ;;
     r)
       echo "Percent of actual space used: `cat $A1_FILE`"
@@ -97,6 +97,8 @@ SELECT TRIM(ROUND((space_limit-space_used-space_reclaimable) /
   FROM v\\$recovery_file_dest;
 exit
 !`
+
+#echo "FRA_PCT1 $FRA_PCT1"
 
 #tty -s && echo "$FRA_PCT1"
 echo "`date "+%x %X"` - $FRA_PCT1   $FRA_PCT2    $FRA_RUNWAY" >> $LOG_FILE
