@@ -2,31 +2,35 @@
 # save_db_configs.sh 
 # Author: dheltzel
 
+BASEDIR=~/saved_configs
+RUNDIR=`dirname "${BASH_SOURCE[0]}"`
+. ${RUNDIR}/ora_funcs.sh
+EXCLUDE_SCHEMAS="(SELECT owner FROM dba_logstdby_skip WHERE statement_opt = 'INTERNAL SCHEMA')"
+CONN_STR='sqlplus -s / as sysdba'
+HOSTNAME=`hostname -s`
+
 usage() {
-  echo "Usage: $0 [-d database] [-g gather_proc]"
+  echo "Usage: $0 [-d database] [-g gather_proc] [-b base dir]"
   echo "  -d database - database to process (default is all running instances)"
-  echo "  -g gather_type - what type of information to gather (default is all uncommented types listed below)"
+  echo "  -g gather_type - what type of information to gather from list below (default is all)"
+  echo "  -b base dir - the base directory used to hold all generated files (default is ${BASEDIR})"
   echo "List of valid types:"
-  grep "     .g\ather" $0|sed -e "s/gather_/ /"
+  grep "     .g\ather" $0|sed -e "s/gather_/ /"|sed -e "s/#//"|sed -e "s/ */   /"|sort -u
   echo
   exit 1
 }
 
-cd `dirname "${BASH_SOURCE[0]}"`
-RUNDIR=`pwd`
-. ${RUNDIR}/ora_funcs.sh
-EXCLUDE_SCHEMAS="(SELECT owner FROM dba_logstdby_skip WHERE statement_opt = 'INTERNAL SCHEMA')"
-BASEDIR=~/saved_configs
-CONN_STR='sqlplus -s / as sysdba'
-
 # Handle parameters
-while getopts ":d:g:" opt; do
+while getopts ":d:g:b:" opt; do
   case $opt in
     d)
       DB2PROCESS=$OPTARG
       ;;
     g)
       PROCNAME=gather_$OPTARG
+      ;;
+    b)
+      BASEDIR=$OPTARG
       ;;
     \?)
       echo "Invalid option: -$OPTARG" >&2
@@ -39,17 +43,23 @@ while getopts ":d:g:" opt; do
   esac
 done
 
+CONFIG_DIR=${BASEDIR}/config/${HOSTNAME}
+CRONTAB_DIR=${BASEDIR}/crontabs
+
+[ -d ${CONFIG_DIR} ] || mkdir -p ${CONFIG_DIR}
+[ -d ${CRONTAB_DIR} ] || mkdir -p ${CRONTAB_DIR}
+
 gather_lic() {
   # License usage
   # Run once for CDB only
-  tty -s && echo "License info: ${BASEDIR}/config/`hostname -s`/lic-${DB_NAME}.lst"
-  ${CONN_STR} @${RUNDIR}/db_option_usage.sql > ${BASEDIR}/config/`hostname -s`/lic-${DB_NAME}.lst
+  tty -s && echo "License info: ${CONFIG_DIR}/lic-${DB_NAME}.lst"
+  ${CONN_STR} @${RUNDIR}/db_option_usage.sql > ${CONFIG_DIR}/lic-${DB_NAME}.lst
 }
 
 gather_pfile() {
   # Contents of the spfile
   # Run once for CDB only
-  export PFILE_NAME=${BASEDIR}/config/`hostname -s`/pfile${DB_NAME}.ora
+  export PFILE_NAME=${CONFIG_DIR}/pfile${DB_NAME}.ora
   tty -s && echo "RDBMS parameters (pfile): $PFILE_NAME"
   ${CONN_STR} <<! >/dev/null
 create pfile='${PFILE_NAME}' from spfile;
@@ -60,7 +70,7 @@ exit
 gather_config() {
   # DB config details
   # Run once for CDB only
-  export ORACFG_NAME=${BASEDIR}/config/`hostname -s`/config-${DB_NAME}.lst
+  export ORACFG_NAME=${CONFIG_DIR}/config-${DB_NAME}.lst
   tty -s && echo "Oracle configuration: $ORACFG_NAME"
   (${CONN_STR} <<!
 set ver off
@@ -148,7 +158,7 @@ srvctl config database -d ${DBNAME} >> ${ORACFG_NAME}
 gather_containers() {
   # List of all containers in the CDB
   # Run once for CDB only
-  export CONTLIST_NAME=${BASEDIR}/config/`hostname -s`/containers-${ORACLE_SID}.ora
+  export CONTLIST_NAME=${CONFIG_DIR}/containers-${ORACLE_SID}.ora
   tty -s && echo "Container list: $CONTLIST_NAME"
   (${CONN_STR} <<! 
 set head off
@@ -159,7 +169,7 @@ exit
 !
 ) > ${CONTLIST_NAME}
   # Get list of PDB's to process
-  export PDBLIST_NAME=${BASEDIR}/config/`hostname -s`/pdbs-${ORACLE_SID}.ora
+  export PDBLIST_NAME=${CONFIG_DIR}/pdbs-${ORACLE_SID}.ora
   tty -s && echo "PDB list: $PDBLIST_NAME"
   (${CONN_STR} <<! 
 set head off
@@ -174,7 +184,7 @@ exit
 gather_users() {
   # List of users
   # Run for CDB and also for each PDB
-  export USERLIST_NAME=${BASEDIR}/config/`hostname -s`/users-${DB_NAME}.lst
+  export USERLIST_NAME=${CONFIG_DIR}/users-${DB_NAME}.lst
   tty -s && echo "User account listing: $USERLIST_NAME"
   (${CONN_STR} <<!
 set ver off
@@ -202,7 +212,7 @@ exit
 
 gather_expiring() {
   # Run for CDB and also for each PDB
-  export EXPIREUSER_NAME=${BASEDIR}/config/`hostname -s`/expiring-${DB_NAME}.lst
+  export EXPIREUSER_NAME=${CONFIG_DIR}/expiring-${DB_NAME}.lst
   tty -s && echo "Expiring Users listing: $EXPIREUSER_NAME"
   (${CONN_STR} <<!
 set ver off
@@ -223,7 +233,7 @@ EXIT
 gather_segments() {
   # List of segments
   # Run for each PDB - not for the CDB
-  export SEGMENTLIST_NAME=${BASEDIR}/config/`hostname -s`/segments-${DB_NAME}.lst
+  export SEGMENTLIST_NAME=${CONFIG_DIR}/segments-${DB_NAME}.lst
   tty -s && echo "Segment listing: $SEGMENTLIST_NAME"
   (${CONN_STR} <<!
 set ver off
@@ -242,7 +252,7 @@ EXIT
 gather_objects() {
   # List of objects
   # Run for each PDB - not for the CDB
-  export OBJECTLIST_NAME=${BASEDIR}/config/`hostname -s`/objects-${DB_NAME}.lst
+  export OBJECTLIST_NAME=${CONFIG_DIR}/objects-${DB_NAME}.lst
   tty -s && echo "Object listing: $OBJECTLIST_NAME"
   (${CONN_STR} <<!
 set ver off
@@ -260,7 +270,7 @@ EXIT
 gather_columns() {
   # List of columns
   # Run for each PDB - not for the CDB
-  export COLUMNLIST_NAME=${BASEDIR}/config/`hostname -s`/columns-${DB_NAME}.lst
+  export COLUMNLIST_NAME=${CONFIG_DIR}/columns-${DB_NAME}.lst
   tty -s && echo "Column listing: $COLUMNLIST_NAME"
   (${CONN_STR} <<!
 set ver off
@@ -284,7 +294,7 @@ gather_ddl() {
   # DDL listing
   # Run for each PDB
   # Run for each schema
-  export SCHEMA_LIST=${BASEDIR}/config/`hostname -s`/schemas-${DB_NAME}.lst
+  export SCHEMA_LIST=${CONFIG_DIR}/schemas-${DB_NAME}.lst
   (${CONN_STR} <<!
 set pagesize 0;
 set linesize 500;
@@ -298,7 +308,7 @@ exit;
 
 while IFS= read -r schema; do
   echo "S: $schema"
-  export DDL_NAME=${BASEDIR}/config/`hostname -s`/ddl-${DB_NAME}-${schema}.lst
+  export DDL_NAME=${CONFIG_DIR}/ddl-${DB_NAME}-${schema}.lst
   tty -s && echo "DDL Generation: $DDL_NAME"
   (${CONN_STR} <<!
 SET LONG 20000 LONGCHUNKSIZE 20000 PAGESIZE 0 LINESIZE 1000 FEEDBACK OFF VERIFY OFF TRIMSPOOL ON HEAD OFF
@@ -334,7 +344,7 @@ done < ${SCHEMA_LIST}
 gather_invalid() {
   # Invalid objects
   # Run for CDB and also for each PDB
-  export INVOBJLIST_NAME=${BASEDIR}/config/`hostname -s`/invalid-${DB_NAME}.lst
+  export INVOBJLIST_NAME=${CONFIG_DIR}/invalid-${DB_NAME}.lst
   tty -s && echo "Invalid Object listing: $INVOBJLIST_NAME"
   (${CONN_STR} <<!
 set ver off
@@ -352,7 +362,7 @@ exit
 gather_jobs() {
   # Oracle jobs listing
   # Run for CDB and also for each PDB
-  export JOBLIST_NAME=${BASEDIR}/config/`hostname -s`/jobs-${DB_NAME}.lst
+  export JOBLIST_NAME=${CONFIG_DIR}/jobs-${DB_NAME}.lst
   tty -s && echo "Oracle Jobs listing: $JOBLIST_NAME"
   (${CONN_STR} <<!
 SET pages 2000
@@ -370,7 +380,7 @@ exit
 gather_storage() {
   # Oracle storage
   # Run for CDB and also for each PDB
-  export STORAGE_NAME=${BASEDIR}/config/`hostname -s`/storage-${DB_NAME}.lst
+  export STORAGE_NAME=${CONFIG_DIR}/storage-${DB_NAME}.lst
   tty -s && echo "Oracle storage: $STORAGE_NAME"
   (${CONN_STR} <<!
 SET pages 0
@@ -427,7 +437,7 @@ exit
 gather_tables() {
   # General problems and their fixes
   # Run for each PDB - not for the CDB
-  export TABLES_NAME=${BASEDIR}/config/`hostname -s`/tables-${DB_NAME}.lst
+  export TABLES_NAME=${CONFIG_DIR}/tables-${DB_NAME}.lst
   tty -s && echo "Table configurations: $TABLES_NAME"
   (${CONN_STR} <<!
 SET pages 0
@@ -445,7 +455,7 @@ exit
 gather_indexes() {
   # General problems and their fixes
   # Run for each PDB - not for the CDB
-  export INDEXES_NAME=${BASEDIR}/config/`hostname -s`/indexes-${DB_NAME}.lst
+  export INDEXES_NAME=${CONFIG_DIR}/indexes-${DB_NAME}.lst
   tty -s && echo "Index configurations: $INDEXES_NAME"
   (${CONN_STR} <<!
 SET pages 0
@@ -463,7 +473,7 @@ exit
 gather_views() {
   # General problems and their fixes
   # Run for each PDB - not for the CDB
-  export VIEWS_NAME=${BASEDIR}/config/`hostname -s`/views-${DB_NAME}.lst
+  export VIEWS_NAME=${CONFIG_DIR}/views-${DB_NAME}.lst
   tty -s && echo "View configurations: $VIEWS_NAME"
   (${CONN_STR} <<!
 SET pages 0
@@ -480,7 +490,7 @@ exit
 gather_sequences() {
   # General problems and their fixes
   # Run for each PDB - not for the CDB
-  export SEQUENCES_NAME=${BASEDIR}/config/`hostname -s`/sequences-${DB_NAME}.lst
+  export SEQUENCES_NAME=${CONFIG_DIR}/sequences-${DB_NAME}.lst
   tty -s && echo "Sequence configurations: $SEQUENCES_NAME"
   (${CONN_STR} <<!
 SET pages 0
@@ -498,7 +508,7 @@ exit
 gather_triggers() {
   # General problems and their fixes
   # Run for each PDB - not for the CDB
-  export TRIGGERS_NAME=${BASEDIR}/config/`hostname -s`/triggers-${DB_NAME}.lst
+  export TRIGGERS_NAME=${CONFIG_DIR}/triggers-${DB_NAME}.lst
   tty -s && echo "Trigger configurations: $TRIGGERS_NAME"
   (${CONN_STR} <<!
 SET pages 0
@@ -515,7 +525,7 @@ exit
 gather_security() {
   # General problems and their fixes
   # Run for CDB and also for each PDB
-  export SECURITY_NAME=${BASEDIR}/config/`hostname -s`/security-${DB_NAME}.lst
+  export SECURITY_NAME=${CONFIG_DIR}/security-${DB_NAME}.lst
   tty -s && echo "Security configurations: $SECURITY_NAME"
   (${CONN_STR} <<!
 SET pages 0
@@ -534,7 +544,7 @@ exit
 gather_grants() {
   # Generate all object grants
   # Run for CDB and also for each PDB
-  export GRANT_NAME=${BASEDIR}/config/`hostname -s`/object_grants-${DB_NAME}.lst
+  export GRANT_NAME=${CONFIG_DIR}/object_grants-${DB_NAME}.lst
   tty -s && echo "Object Grants: $GRANT_NAME"
   (${CONN_STR} <<!
 set echo off
@@ -554,7 +564,7 @@ exit
 
 gather_server() {
   # Per server actions
-  export CRONTAB_NAME=${BASEDIR}/crontabs/crontab_`hostname -s`-oracle
+  export CRONTAB_NAME=${CRONTAB_DIR}/crontab_${HOSTNAME}-oracle
   tty -s && echo "writing crontab to: $CRONTAB_NAME"
   crontab -l > ${CRONTAB_NAME} 2>/dev/null
 
@@ -563,7 +573,7 @@ gather_server() {
   do
     tty -s && echo "Getting patch levels for ${oh_name}"
     export ORACLE_HOME=${oh_dir}
-    export PSUINV_NAME=${BASEDIR}/config/`hostname -s`/opatch-${oh_name}.lst
+    export PSUINV_NAME=${CONFIG_DIR}/opatch-${oh_name}.lst
     if [ -x ${ORACLE_HOME}/OPatch/opatch ] ; then
       ${ORACLE_HOME}/OPatch/opatch lsinventory | grep -v "file location" >${PSUINV_NAME}
     fi
@@ -573,7 +583,7 @@ gather_server() {
     tty -s && echo "Patch inventory in ${PSUINV_NAME}"
   done
 
-  SRV_CONF_NAME=${BASEDIR}/config/`hostname -s`/server_config.lst
+  SRV_CONF_NAME=${CONFIG_DIR}/server_config.lst
   tty -s && echo "Server configuration in ${SRV_CONF_NAME}"
   cat /etc/redhat-release >${SRV_CONF_NAME}
   uname -a >>${SRV_CONF_NAME}
@@ -656,7 +666,7 @@ else
 fi
 
 # Remove any files that failed because the standby didn't allow access
-#grep -l ORA-01219 ${BASEDIR}/config/`hostname -s`/*|xargs rm -f
+#grep -l ORA-01219 ${CONFIG_DIR}/*|xargs rm -f
 # Remove any empty files
-find ${BASEDIR}/config/`hostname -s` -name "*lst" -size 0 -exec rm {} \;
+find ${CONFIG_DIR} -name "*lst" -size 0 -exec rm {} \;
 
