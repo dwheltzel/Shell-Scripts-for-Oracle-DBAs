@@ -95,11 +95,11 @@ is_standby ()
   # Test the connection
   (sqlplus -s / as sysdba <<!
 set pages 0
-select DATABASE_ROLE from v\\$database;
+SELECT SYS_CONTEXT ('USERENV', 'DATABASE_ROLE') FROM DUAL;
 exit
 !
-) | grep PRIMARY >/dev/null && return 0
-  return 1
+) | grep PRIMARY >/dev/null && return 1
+  return 0
 }
 
 is_clonedb ()
@@ -186,8 +186,8 @@ set pages 0
 show pdbs
 exit
 !
-) | grep $1 && return 0
-  return 1
+) | grep $1 && return 1
+  return 0
 }
 
 # Checks status of a PDB, 1 argument is required, the name of the PDB to check
@@ -204,6 +204,6 @@ set pages 0
 show pdbs
 exit
 !
-) | grep $1 | grep "READ WRITE" && return 0
-  return 1
+) | grep $1 | grep "READ WRITE" && return 1
+  return 0
 }
