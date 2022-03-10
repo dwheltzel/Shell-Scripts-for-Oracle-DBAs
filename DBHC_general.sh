@@ -3,13 +3,6 @@
 #
 # Author: Dennis Heltzel
 
-. /home/oracle/bin/ora_funcs.sh
-ORACLE_BASE=/u01/app/oracle
-ORACLE_HOME=${ORACLE_BASE}/product/12.1.0.2/DbHome_2
-PATH=$PATH:$ORACLE_HOME/bin
-
-CRED=${CRED:-/}
-
 usage() {
       echo "Usage: $0 [-s] [-d database name] [-m email address]"
       echo "  -s - run space usage report"
@@ -21,10 +14,10 @@ usage() {
 export MAILX=/usr/local/bin/sendEmail-v1.56/sendEmail
 export SMTP_SERVER=mail.example.com
 export SENDER="`hostname`@example.com"
-
+CRED=${CRED:-/}
 RUNDIR=`dirname "${BASH_SOURCE[0]}"`
 . ${RUNDIR}/ora_funcs.sh
-BASEDIR=/cloudfs/logs
+BASEDIR=~/logs
 
 # Handle parameters
 while getopts ":d:m:s" opt; do
