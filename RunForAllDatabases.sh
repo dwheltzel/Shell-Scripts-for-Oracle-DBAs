@@ -1,11 +1,8 @@
 # Iterates a command across all running DB instances 
 #
-# File $Id: RunForAllDatabases.sh 3857 2014-04-09 14:22:53Z dheltzel $
-# Modified $Author: dheltzel $ 
-# Date $Date: 2014-04-09 10:22:53 -0400 (Wed, 09 Apr 2014) $
-# Revision $Revision: 3857 $
-. `dirname "${BASH_SOURCE[0]}"`/ora_funcs.sh
+# Author: dheltzel
 
+. `dirname "${BASH_SOURCE[0]}"`/ora_funcs.sh
 RUN_CMDS=Y
 
 usage() {

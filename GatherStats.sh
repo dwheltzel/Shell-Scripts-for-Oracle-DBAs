@@ -2,13 +2,6 @@
 # 
 # Author: Dennis Heltzel
 
-. /home/oracle/bin/ora_funcs.sh
-ORACLE_BASE=/u01/app/oracle
-ORACLE_HOME=${ORACLE_BASE}/product/12.1.0.2/DbHome_2
-PATH=$PATH:$ORACLE_HOME/bin
-
-CRED=${CRED:-/}
-
 usage() {
   echo "Usage: $0 [-t days] [-r num_recs] [-d database name] [-s] [-f filter_string]"
   echo "  -t days - only select tables that have not had stats gathered in at least this many days (default 7)"
@@ -19,6 +12,11 @@ usage() {
   echo "  -f filter_string - arbitrary filter for the select query (ex. \"AND s.owner='DBADMIN'\")"
   exit 1
 }
+
+CONN_STR='sqlplus -s / as sysdba'
+RUNDIR=`dirname "${BASH_SOURCE[0]}"`
+. ${RUNDIR}/ora_funcs.sh
+BASEDIR=~/logs
 
 # Handle parameters
 while getopts ":d:t:p:r:sf:" opt; do
@@ -58,8 +56,7 @@ DB_NAME=${DB_NAME:-${ORACLE_SID}}
 
 AGE_DAYS=${AGE_DAYS:-7}
 PART_AGE_DAYS=${PART_AGE_DAYS:-180}
-LOG_DIR=/cloudfs/logs
-BASE_NAME=${LOG_DIR}/GatherStats_${DB_NAME}
+BASE_NAME=${BASEDIR}/GatherStats_${DB_NAME}
 SQL_NAME=${BASE_NAME}.sql
 LOG_FILE=${BASE_NAME}.log
 #echo "${AGE_DAYS}"
@@ -72,7 +69,7 @@ exec >> $LOG_FILE 2>&1
 
 echo "Gathering stats for tables in ${DB_NAME} with stats older that ${AGE_DAYS} days . . ."
 
-(sqlplus -s ${CRED} as sysdba <<!
+(${CONN_STR} <<!
 set pages 0
 set feed off
 set head off
@@ -110,4 +107,4 @@ if [ -n "${SYS_STATS}" ] ; then
 fi
 echo "exit" >>${SQL_NAME}
 
-sqlplus ${CRED} as sysdba @${SQL_NAME}
+${CONN_STR} @${SQL_NAME}

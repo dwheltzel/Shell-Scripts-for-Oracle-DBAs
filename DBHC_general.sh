@@ -11,10 +11,11 @@ usage() {
       exit 1
 }
 
-export MAILX=/usr/local/bin/sendEmail-v1.56/sendEmail
-export SMTP_SERVER=mail.example.com
-export SENDER="`hostname`@example.com"
+MAILX=/usr/local/bin/sendEmail-v1.56/sendEmail
+SMTP_SERVER=mail.example.com
+SENDER="`hostname`@example.com"
 CRED=${CRED:-/}
+CONN_STR='sqlplus -s / as sysdba'
 RUNDIR=`dirname "${BASH_SOURCE[0]}"`
 . ${RUNDIR}/ora_funcs.sh
 BASEDIR=~/logs
@@ -29,7 +30,7 @@ while getopts ":d:m:s" opt; do
       DB_NAME=$OPTARG
       ;;
     m)
-      export MAILTO=$OPTARG
+      MAILTO=$OPTARG
       ;;
     \?)
       echo "Invalid option: -$OPTARG" >&2
@@ -52,10 +53,10 @@ DB_NAME=${DB_NAME:-${ORACLE_SID}}
 #echo ${MAILTO}
 
 space_usage() {
-export REPORT_NAME=${BASEDIR}/SpaceUsageReport_${DB_NAME}-`date "+%y%m%d%H%M"`.lst
-export REPORT_TITLE="Space Usage Report for ${DB_NAME}"
+REPORT_NAME=${BASEDIR}/SpaceUsageReport_${DB_NAME}-`date "+%y%m%d%H%M"`.lst
+REPORT_TITLE="Space Usage Report for ${DB_NAME}"
 
-sqlplus -s ${CRED} as sysdba <<!
+${CONN_STR} <<!
 SET PAGES 0
 SET TRIMSPOOL ON
 COL tablespace FOR a20
@@ -96,10 +97,10 @@ exit
 !
 }
 
-export REPORT_NAME=${BASEDIR}/GeneralHealthReport_${DB_NAME}-`date "+%y%m%d%H%M"`.lst
-export REPORT_TITLE="Health Report for ${DB_NAME}"
+REPORT_NAME=${BASEDIR}/GeneralHealthReport_${DB_NAME}-`date "+%y%m%d%H%M"`.lst
+REPORT_TITLE="Health Report for ${DB_NAME}"
 
-sqlplus -s ${CRED} as sysdba <<!
+${CONN_STR} <<!
 set ver off
 set lines 120
 set pages 500
