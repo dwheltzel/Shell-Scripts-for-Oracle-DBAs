@@ -3,31 +3,38 @@
 #
 # Author: Dennis Heltzel
 
+BASEDIR=~/logs
+RUNDIR=`dirname "${BASH_SOURCE[0]}"`
+. ${RUNDIR}/ora_funcs.sh
+EXCLUDE_SCHEMAS="(SELECT owner FROM dba_logstdby_skip WHERE statement_opt = 'INTERNAL SCHEMA')"
+CONN_STR='sqlplus -s / as sysdba'
+HOSTNAME=`hostname -s`
+MAILX=/usr/local/bin/sendEmail-v1.56/sendEmail
+SMTP_SERVER=mail.example.com
+SENDER="`hostname`@example.com"
+DBNAME=${ORACLE_PDB_SID:-${ORACLE_SID}}
+SPACE_USAGE=
+
 usage() {
-      echo "Usage: $0 [-s] [-d database name] [-m email address]"
+      echo "Usage: $0 [-s] [-d database name] [-b base dir] [-m email address]"
       echo "  -s - run space usage report"
-      echo "  -d database name - defaults to $ORACLE_SID"
+      echo "  -d database name - defaults to ${DBNAME}"
+      echo "  -b base dir - the base directory used to hold all generated files (default is ${BASEDIR})"
       echo "  -m email address - send the report to this address"
       exit 1
 }
 
-MAILX=/usr/local/bin/sendEmail-v1.56/sendEmail
-SMTP_SERVER=mail.example.com
-SENDER="`hostname`@example.com"
-CRED=${CRED:-/}
-CONN_STR='sqlplus -s / as sysdba'
-RUNDIR=`dirname "${BASH_SOURCE[0]}"`
-. ${RUNDIR}/ora_funcs.sh
-BASEDIR=~/logs
-
 # Handle parameters
-while getopts ":d:m:s" opt; do
+while getopts ":sd:b:m:" opt; do
   case $opt in
     s)
       SPACE_USAGE=YES
       ;;
     d)
-      DB_NAME=$OPTARG
+      DBNAME=$OPTARG
+      ;;
+    b)
+      BASEDIR=$OPTARG
       ;;
     m)
       MAILTO=$OPTARG
@@ -47,14 +54,13 @@ while getopts ":d:m:s" opt; do
   esac
 done
 
-oe ${DB_NAME}
-DB_NAME=${DB_NAME:-${ORACLE_SID}}
-#echo "DB_NAME=${DB_NAME}:ORACLE_SID=${ORACLE_SID}:"
+ORACLE_PDB_SID=${DBNAME}
+#echo "DBNAME=${DBNAME}:ORACLE_SID=${ORACLE_SID}:"
 #echo ${MAILTO}
 
 space_usage() {
-REPORT_NAME=${BASEDIR}/SpaceUsageReport_${DB_NAME}-`date "+%y%m%d%H%M"`.lst
-REPORT_TITLE="Space Usage Report for ${DB_NAME}"
+REPORT_NAME=${BASEDIR}/SpaceUsageReport_${DBNAME}-`date "+%y%m%d%H%M"`.lst
+REPORT_TITLE="Space Usage Report for ${DBNAME}"
 
 ${CONN_STR} <<!
 SET PAGES 0
@@ -97,8 +103,8 @@ exit
 !
 }
 
-REPORT_NAME=${BASEDIR}/GeneralHealthReport_${DB_NAME}-`date "+%y%m%d%H%M"`.lst
-REPORT_TITLE="Health Report for ${DB_NAME}"
+REPORT_NAME=${BASEDIR}/GeneralHealthReport_${DBNAME}-`date "+%y%m%d%H%M"`.lst
+REPORT_TITLE="Health Report for ${DBNAME}"
 
 ${CONN_STR} <<!
 set ver off

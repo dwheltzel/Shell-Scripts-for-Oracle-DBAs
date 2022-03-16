@@ -1,30 +1,38 @@
-# Shrinks the sizes of datafiles to release space.
+#!/bin/bash
+# DatafileShrink.sh - Shrinks the sizes of datafiles to release space.
 #
-# written by Dennis Heltzel
+# Author: Dennis Heltzel
 
-CRED=${CRED:-/}
+RUNDIR=`dirname "${BASH_SOURCE[0]}"`
+. ${RUNDIR}/ora_funcs.sh
+DBNAME=${ORACLE_PDB_SID:-${ORACLE_SID}}
+CONN_STR='sqlplus -s / as sysdba'
 RUN_DDL=Y
+BASEDIR=~/logs
 
 usage() {
-  echo "Usage: $0 [-n] [-p] [-d database name]"
+  echo "Usage: $0 [-n] [-p] [-d database name] [-b base dir]"
   echo "  -n - no changes, just create the files with the shrink commands"
   echo "  -p - purge the dba_recyclebin"
-  echo "  -d database name - defaults to $ORACLE_SID"
+  echo "  -d database name - defaults to ${DBNAME}"
+  echo "  -b base dir - the base directory used to hold all generated files (default is ${BASEDIR})"
   exit 1
 }
 
 # Handle parameters
-while getopts ":nd:p" opt; do
+while getopts ":npd:b:" opt; do
   case $opt in
-    d)
-      TWO_TASK=$OPTARG
-      DB_NAME=$OPTARG
+    n)
+      RUN_DDL=N
       ;;
     p)
       PURGE=Y
       ;;
-    n)
-      RUN_DDL=N
+    d)
+      DBNAME=$OPTARG
+      ;;
+    b)
+      BASEDIR=$OPTARG
       ;;
     \?)
       echo "Invalid option: -$OPTARG" >&2
@@ -37,18 +45,18 @@ while getopts ":nd:p" opt; do
   esac
 done
 
-DB_NAME=${DB_NAME:-${ORACLE_SID}}
-BASE_NAME=DatafileShrink_${DB_NAME}-`date "+%y%m%d%H%M"`
+ORACLE_PDB_SID=${DBNAME}
+BASE_NAME=${BASEDIR}/DatafileShrink_${DBNAME}-`date "+%y%m%d%H%M"`
 REPORT_NAME=${BASE_NAME}.lst
 SQL_NAME=${BASE_NAME}.sql
 CMD_OUTPUT_NAME=${BASE_NAME}.out
-STATS_FILE_NAME=DatafileShrink_${DB_NAME}.stats
-#echo "DB_NAME: ${DB_NAME}"
-#echo "REPORT_NAME: ${REPORT_NAME}"
-#echo "SQL_NAME: ${SQL_NAME}"
+STATS_FILE_NAME=${BASE_NAME}.stats
+tty -s && echo "DBNAME: ${DBNAME}"
+tty -s && echo "REPORT_NAME: ${REPORT_NAME}"
+tty -s && echo "SQL_NAME: ${SQL_NAME}"
 
 # Check the flashback status of the database
-FB_ISSUE=`sqlplus -s ${CRED} as sysdba <<!
+FB_ISSUE=`${CONN_STR} <<!
 set pages 0
 set feed off
 SET serverout ON SIZE UNLIMITED
@@ -70,48 +78,47 @@ END;
 exit
 !`
 if [ "${FB_ISSUE}" = 'Y' ] ; then
-  echo "Flashback active - aborting shrink"
-  exit
+  tty -s && echo "Flashback active - aborting shrink"
+  exit 1
 fi
 
 # Is this a clone db?
-CLONE_DB=`sqlplus -s ${CRED} as sysdba <<!
+CLONE_DB=`${CONN_STR} <<!
 set pages 0
 select value from v\\\$parameter where NAME = 'clonedb';
 exit
 !`
 if [ "${CLONE_DB}" = "TRUE" ] ; then
-  echo "This is a clonedb - aborting shrink"
-  exit
+  tty -s && echo "This is a clonedb - aborting shrink"
+  exit 1
 fi
 
 
 # Get the database block size
-BLOCK_SIZE=`sqlplus -s ${CRED} as sysdba <<!
+BLOCK_SIZE=`${CONN_STR} <<!
 set pages 0
 select value from v\\\$parameter where NAME = 'db_block_size';
 exit
 !`
 
 NEXT_EXT=10M
-#echo "BLOCK_SIZE:${BLOCK_SIZE}:"
-#echo "NEXT_EXT:${NEXT_EXT}:"
+tty -s && echo "BLOCK_SIZE:${BLOCK_SIZE}:"
 if [ "${BLOCK_SIZE}" -gt 8192 ] ; then
   NEXT_EXT=20M
 fi
-#echo "NEXT_EXT:${NEXT_EXT}:"
+tty -s && echo "NEXT_EXT:${NEXT_EXT}:"
 
 # Purge the recyclebin if asked
 if [ "${PURGE}" = 'Y' ] ; then
-  echo "Purging the DBA Recyclebin . . ."
-  sqlplus -s ${CRED} as sysdba <<!
+  tty -s && echo "Purging the DBA Recyclebin . . ."
+  ${CONN_STR} <<!
 purge dba_recyclebin;
 exit
 !
 fi
 
 # Fix any datafiles that are not autoextensible or have small next extents
-sqlplus -s ${CRED} as sysdba <<!
+${CONN_STR} <<!
 set ver off
 set pages 200
 set feed off
@@ -129,18 +136,18 @@ exit
 # Run DDL if requested
 if [ "${RUN_DDL}" = "Y" ] ; then
   echo "exit" >>${SQL_NAME}
-  sqlplus ${CRED} as sysdba @${SQL_NAME} >${CMD_OUTPUT_NAME}
+  ${CONN_STR} @${SQL_NAME} >${CMD_OUTPUT_NAME}
 fi
 
 # Get the size of the datafiles before shrinking
-PRE_SHRINK_SIZE=`sqlplus -s ${CRED} as sysdba <<!
+PRE_SHRINK_SIZE=`${CONN_STR} <<!
 set pages 0
 SELECT SUM(bytes) / 1024 / 1024 FROM dba_data_files WHERE tablespace_name NOT LIKE 'UNDO%' AND tablespace_name NOT LIKE 'SYS%';
 exit
 !`
 
 # Run the report
-sqlplus -s ${CRED} as sysdba <<!
+${CONN_STR} <<!
 set ver off
 set pages 200
 set feed off
@@ -194,18 +201,18 @@ exit
 if [ "${RUN_DDL}" = "Y" ] ; then
   grep alter ${REPORT_NAME} > ${SQL_NAME}
   echo "exit" >>${SQL_NAME}
-  sqlplus ${CRED} as sysdba @${SQL_NAME} >>${CMD_OUTPUT_NAME}
+  ${CONN_STR} @${SQL_NAME} >>${CMD_OUTPUT_NAME}
 
   # Get the size of the datafiles after shrinking
-  POST_SHRINK_SIZE=`sqlplus -s ${CRED} as sysdba <<!
+  POST_SHRINK_SIZE=`${CONN_STR} <<!
 set pages 0
 SELECT SUM(bytes) / 1024 / 1024 FROM dba_data_files WHERE tablespace_name NOT LIKE 'UNDO%' AND tablespace_name NOT LIKE 'SYS%';
 exit
 !`
-  echo "Database: ${DB_NAME}  Shrink Date: `date`" >${STATS_FILE_NAME}
-  echo "Starting size: ${PRE_SHRINK_SIZE}|" >>${STATS_FILE_NAME}
-  echo "Ending size: ${POST_SHRINK_SIZE}|" >>${STATS_FILE_NAME}
+  tty -s && echo "Database: ${DB_NAME}  Shrink Date: `date`" >${STATS_FILE_NAME}
+  tty -s && echo "Starting size: ${PRE_SHRINK_SIZE}|" >>${STATS_FILE_NAME}
+  tty -s && echo "Ending size: ${POST_SHRINK_SIZE}|" >>${STATS_FILE_NAME}
   RECOVERED_SIZE=$(($PRE_SHRINK_SIZE - $POST_SHRINK_SIZE))
-  echo "Disk space recovered (MB): ${RECOVERED_SIZE}" >>${STATS_FILE_NAME}
+  tty -s && echo "Disk space recovered (MB): ${RECOVERED_SIZE}" >>${STATS_FILE_NAME}
   cat ${STATS_FILE_NAME}
 fi

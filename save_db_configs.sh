@@ -1,6 +1,7 @@
 #!/bin/bash
-# save_db_configs.sh 
-# Author: dheltzel
+# save_db_configs.sh - Save many configurations into searchable, SCC-friendly text files
+#
+# Author: Dennis Heltzel
 
 BASEDIR=~/saved_configs
 RUNDIR=`dirname "${BASH_SOURCE[0]}"`
@@ -632,7 +633,7 @@ one_cdb() {
         export ORACLE_PDB_SID=${pdb_name}
         #echo ${ORACLE_PDB_SID}
         DB_NAME=${pdb_name}
-        gather_ddl
+        #gather_ddl
         gather_users
         gather_expiring
         gather_invalid
